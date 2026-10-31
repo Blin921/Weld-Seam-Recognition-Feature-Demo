@@ -74,3 +74,31 @@ describe("camera and animation", () => {
     expect(pathAtTime([], 10)).toBe(0);
   });
 });
+
+describe("large point cloud fixture", () => {
+  it("parses all 200,000 points as views into the original 3.4MB buffer", () => {
+    const n = 200000,
+      xyz = 2052,
+      rgb = xyz + n * 12,
+      instance = rgb + n * 3;
+    const buffer = new ArrayBuffer(instance + n * 2);
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({
+        version: 1,
+        units: "mm",
+        frame: "camera",
+        n,
+        offsets: { xyz, rgb, instance },
+      }),
+    );
+    new DataView(buffer).setUint32(0, bytes.length, true);
+    new Uint8Array(buffer, 4, bytes.length).set(bytes);
+    new Float32Array(buffer, xyz, n * 3)[n * 3 - 1] = 125.5;
+    const cloud = parseCloud(buffer);
+    expect(cloud.xyz.length).toBe(600000);
+    expect(cloud.instance.length).toBe(n);
+    expect(cloud.xyz.at(-1)).toBe(125.5);
+    expect(cloud.rgb.buffer).toBe(buffer);
+    expect(cloud.instance.buffer).toBe(buffer);
+  });
+});

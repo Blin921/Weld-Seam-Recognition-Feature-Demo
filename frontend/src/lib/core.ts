@@ -116,8 +116,10 @@ export async function api<T>(
   path: string,
   body?: unknown,
   method?: string,
+  signal?: AbortSignal,
 ): Promise<T> {
   const response = await fetch("/api" + path, {
+    signal,
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers:
       body instanceof File

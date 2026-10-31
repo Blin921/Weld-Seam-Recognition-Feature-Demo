@@ -3,6 +3,8 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import SiteHeader from "./SiteHeader";
+import { useCompactLayout } from "@/lib/useCompactLayout";
+import { mergeCalibration } from "@/lib/calibration";
 import { samplePath } from "@/lib/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -134,6 +136,14 @@ export default function Workstation() {
   ];
   const tab = Math.max(0, routes.indexOf(pathname));
   const acquisition = pathname === "/scan";
+  const compact = useCompactLayout();
+  const [panelChoice, setPanelChoice] = useState({
+    path: pathname,
+    tab: "controls",
+  });
+  const showDetails =
+    compact && panelChoice.path === pathname && panelChoice.tab === "details";
+  const [connectionIssue, setConnectionIssue] = useState<string | null>(null);
   const setTab = (i: number) => router.push(routes[i]);
   const pageTitle = acquisition
     ? "数据采集与管理"
@@ -196,6 +206,7 @@ export default function Workstation() {
     ),
     [advanced, setAdvanced] = useState(""),
     [calibMode, setCalibMode] = useState(false);
+  const calibrationCache = useRef(new Map<string, Calib>());
   const cache = useRef(new Map<string, Cloud>()),
     generation = useRef(0),
     taskLock = useRef(false),
@@ -272,8 +283,14 @@ export default function Workstation() {
         list.reason instanceof ApiError && list.reason.status === 404
       ))
         fail(list.reason);
-      if (cal.status === "fulfilled") setCalib(cal.value);
-      else fail(cal.reason);
+      if (cal.status === "fulfilled") {
+        const status = mergeCalibration(
+          cal.value,
+          calibrationCache.current.get(id),
+        );
+        calibrationCache.current.set(id, status);
+        setCalib(status);
+      } else fail(cal.reason);
       setLoading(false);
     },
     [fail],
@@ -313,20 +330,37 @@ export default function Workstation() {
   useEffect(() => {
     if (!active) return;
     let stopped = false,
-      timer: ReturnType<typeof setTimeout>;
+      inFlight = false,
+      finished = false,
+      retries = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let request: AbortController | undefined;
+    const schedule = (delay: number) => {
+      clearTimeout(timer);
+      if (!stopped && !finished) timer = setTimeout(() => void poll(), delay);
+    };
     const poll = async () => {
-      if (stopped) return;
-      if (document.hidden) {
-        timer = setTimeout(poll, 1500);
-        return;
-      }
+      if (stopped || finished || inFlight) return;
+      if (document.hidden) return;
+      inFlight = true;
+      request = new AbortController();
+      const timeout = setTimeout(() => request?.abort(), 10000);
       try {
-        const job = await api<Job>("/jobs/" + encodeURIComponent(active));
+        const job = await api<Job>(
+          "/jobs/" + encodeURIComponent(active),
+          undefined,
+          undefined,
+          request.signal,
+        );
         if (stopped) return;
+        if (retries) notify("任务连接已恢复，继续跟踪原任务");
+        retries = 0;
+        setConnectionIssue(null);
         setJobs((old) =>
           [job, ...old.filter((j) => j.id !== job.id)].slice(0, 20),
         );
         if (job.state === "done" || job.state === "error") {
+          finished = true;
           setActive(null);
           taskLock.current = false;
           if (job.state === "error")
@@ -338,24 +372,46 @@ export default function Workstation() {
             notify(
               `任务完成 · 焊缝 ${job.result?.n_seams ?? "—"} 条 · ${job.result?.seconds ?? job.seconds ?? "—"} 秒`,
             );
-            await refreshFrames();
-            if (currentFrame.current)
-              await loadFrame(currentFrame.current, true);
+            void refreshFrames()
+              .then(async (list) => {
+                if (currentFrame.current)
+                  await loadFrame(currentFrame.current, true);
+                else if (list.length) setFid(list[0].id);
+              })
+              .catch(fail);
           }
-          return;
         }
       } catch (error) {
-        fail(error);
-        setActive(null);
-        taskLock.current = false;
-        return;
+        if (stopped) return;
+        retries++;
+        const message =
+          error instanceof ApiError && error.status === 404
+            ? "后端暂时无法查询该任务，请确认后端未重启"
+            : "任务连接中断，正在重试";
+        setConnectionIssue(message + "；保留原任务，采集与识别继续锁定");
+        if (retries === 1) notify(message + "，不会重复提交任务");
+      } finally {
+        clearTimeout(timeout);
+        inFlight = false;
+        if (!stopped && !finished)
+          schedule(Math.min(1500 * 2 ** Math.min(retries, 3), 12000));
       }
-      timer = setTimeout(poll, 1500);
     };
+    const resume = () => {
+      if (!document.hidden) {
+        clearTimeout(timer);
+        void poll();
+      }
+    };
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("online", resume);
     void poll();
     return () => {
       stopped = true;
       clearTimeout(timer);
+      request?.abort();
+      document.removeEventListener("visibilitychange", resume);
+      window.removeEventListener("online", resume);
     };
   }, [active, notify, fail, refreshFrames, loadFrame]);
   useEffect(() => {
@@ -381,6 +437,7 @@ export default function Workstation() {
   async function task(kind: "scan" | "recognize") {
     if (taskLock.current) return;
     taskLock.current = true;
+    setConnectionIssue(null);
     setBusy(true);
     try {
       const payload =
@@ -453,7 +510,9 @@ export default function Workstation() {
               })),
             };
       const result = await api<Calib>("/calib", payload);
-      setCalib({ ...result, uncalibrated: clear, has_calib: !clear });
+      const status = { ...result, uncalibrated: clear, has_calib: !clear };
+      calibrationCache.current.set(fid, status);
+      setCalib(status);
       setProgram(null);
       setTransfer(null);
       setPlaying(false);
@@ -540,6 +599,15 @@ export default function Workstation() {
     total = arcLengths(points).at(-1) ?? 0,
     distance = pathAtTime(points, seconds),
     duration = pathDuration(points);
+  const busyStep = busy ? (acquisition ? 0 : tab) : -1;
+  const stepStates = [
+    active || busyStep === 0 ? "running" : cloud ? "ready" : "idle",
+    busyStep === 1 ? "running" : calib.uncalibrated ? "idle" : "ready",
+    loading ? "running" : seams.length ? "ready" : "idle",
+    busyStep === 3 ? "running" : hasProgram ? "ready" : "idle",
+    busyStep === 4 ? "running" : transfer ? "ready" : "idle",
+  ];
+  const stateLabels = { idle: "未就绪", running: "进行中", ready: "就绪" };
   const stepNames = [
     "帧与识别",
     "坐标标定",
@@ -620,7 +688,172 @@ export default function Workstation() {
           {seams.length
             ? "没有满足最短长度的焊缝，请调整过滤值"
             : "暂无焊缝，请先选择有结果的帧或执行识别。"}
+          <button
+            className="secondary full"
+            disabled={busy || !!active}
+            onClick={() =>
+              seams.length
+                ? setRecognition({ ...recognition, min_len: 0 })
+                : fid
+                  ? void task("recognize")
+                  : router.push("/scan")
+            }
+          >
+            {seams.length ? "显示全部焊缝" : fid ? "识别当前帧" : "上传点云"}
+          </button>
         </div>
+      )}
+    </div>
+  );
+  const contextContent = (
+    <div className="context-content">
+      {acquisition ? (
+        <>
+          <h3>当前帧信息</h3>
+          <h2 className="teal-heading">{fid || "尚未选择帧"}</h2>
+          <p>点数 {cloud?.header.n.toLocaleString() ?? "—"}</p>
+          <p>来源 {frames.find((f) => f.id === fid)?.source ?? "—"}</p>
+          <p>
+            识别状态{" "}
+            {frames.find((f) => f.id === fid)?.has_artifacts
+              ? "有历史结果"
+              : "待识别"}
+          </p>
+          <p>
+            大小{" "}
+            {(
+              (frames.find((f) => f.id === fid)?.bytes ?? 0) /
+              1024 /
+              1024
+            ).toFixed(1)}{" "}
+            MB
+          </p>
+        </>
+      ) : tab === 1 ? (
+        <>
+          <h3>标定结果</h3>
+          <h2 className="teal-heading">
+            {calib.uncalibrated ? "尚未标定" : "✓ 标定已保存"}
+          </h2>
+          <p>标定标签 {calib.calib_tag}</p>
+          <p>最大残差 {calib.max_dev_mm ?? "—"} mm</p>
+          <p>平均残差 {calib.mean_dev_mm ?? "—"} mm</p>
+          {(calib.max_dev_mm ?? 0) > 1.5 && (
+            <div className="warning">
+              最大残差超过 1.5mm，点对精度不足，请检查后重新标定。
+            </div>
+          )}
+          <p>点对数量 {pairs.length}</p>
+          <p>T camera → robot</p>
+          <div className="help">
+            矩阵由后端保存。此处仅显示已确认返回的数据。
+          </div>
+        </>
+      ) : tab === 3 ? (
+        <>
+          <h3>TCP 实时信息</h3>
+          {hasProgram ? (
+            <>
+              <h2 className="teal-heading">
+                X {samplePath(points, distance).point[0].toFixed(2)} mm
+              </h2>
+              <p>Y {samplePath(points, distance).point[1].toFixed(2)} mm</p>
+              <p>Z {samplePath(points, distance).point[2].toFixed(2)} mm</p>
+              <p>
+                W / P / R{" "}
+                {(
+                  program.wpr_list[samplePath(points, distance).segment] ?? [
+                    180, 0, 0,
+                  ]
+                ).join(" / ")}{" "}
+                °
+              </p>
+              <p>
+                路径 {distance.toFixed(1)} / {total.toFixed(1)} mm
+              </p>
+              <p>坐标系：相机系</p>
+            </>
+          ) : (
+            <div className="empty-small">
+              生成当前焊缝的程序后显示真实 TCP 途经点及姿态。
+            </div>
+          )}
+          {calib.uncalibrated && (
+            <div className="warning danger-box">坐标仍是相机系，禁止上机。</div>
+          )}
+        </>
+      ) : tab === 4 ? (
+        <>
+          <h3>传输结果</h3>
+          {transfer ? (
+            <>
+              <h2 className="teal-heading">✓ 文件传输成功</h2>
+              <p>远端路径 {transfer.remote_path}</p>
+              <p>字节数 {transfer.bytes}</p>
+              {transfer.existed_before && (
+                <p className="warning">已覆盖控制器同名程序</p>
+              )}
+            </>
+          ) : (
+            <div className="empty-small">
+              尚未传输文件，请先生成程序并确认控制器连接参数。
+            </div>
+          )}
+          <p>机器人启动：未执行</p>
+        </>
+      ) : (
+        <>
+          {" "}
+          <div className="context-summary">
+            <div>
+              <strong>{seams.length.toString().padStart(2, "0")}</strong>
+              <small>识别焊缝</small>
+            </div>
+            <div>
+              <strong>
+                {seams.reduce((a, s) => a + s.length_mm, 0).toFixed(0)}
+                <em> mm</em>
+              </strong>
+              <small>焊缝总长</small>
+            </div>
+          </div>
+          <h3>
+            识别结果 <span>↑ ↓ 切换</span>
+          </h3>
+          {seamList}
+          <div className="section-divider" />
+          <h3>
+            <Crosshair size={16} />
+            所选焊缝详情
+          </h3>
+          {selectedSeam ? (
+            <dl>
+              <dt>焊缝编号</dt>
+              <dd>#{selectedSeam.id}</dd>
+              <dt>工件形状</dt>
+              <dd>{selectedSeam.shape}</dd>
+              <dt>连接类型</dt>
+              <dd>{selectedSeam.type}</dd>
+              <dt>长度</dt>
+              <dd>{selectedSeam.length_mm.toFixed(2)} mm</dd>
+              <dt>坐标系</dt>
+              <dd>相机坐标系</dd>
+            </dl>
+          ) : (
+            <div className="empty-small">
+              选择焊缝后查看几何详情，并进行程序生成与预演。
+            </div>
+          )}
+          <div className="tip">
+            <ShieldCheck size={19} />
+            <p>
+              让轨迹先被看见
+              <small>
+                生成程序后，在三维视图中预演 TCP 轨迹，确认标定与途经点。
+              </small>
+            </p>
+          </div>
+        </>
       )}
     </div>
   );
@@ -649,6 +882,13 @@ export default function Workstation() {
             C++ 解算器
           </span>
           <span
+            title={
+              calib.uncalibrated
+                ? "未标定：坐标仍是相机系，禁止上机"
+                : calib.max_dev_mm === undefined
+                  ? "已标定；后端未提供本次残差"
+                  : `最大残差 ${calib.max_dev_mm} mm${calib.max_dev_mm > 1.5 ? "，超过 1.5mm，请检查标定点对" : ""}`
+            }
             className={
               calib.uncalibrated
                 ? "danger"
@@ -669,6 +909,11 @@ export default function Workstation() {
           <SunMoon size={19} />
         </button>
       </div>
+      {connectionIssue && (
+        <div role="status" className="connection-warning">
+          {connectionIssue}。恢复网络后自动继续，也可切回浏览器标签页立即重试。
+        </div>
+      )}
       <div className="panels">
         <aside className="control-panel">
           <div className="panel-title">
@@ -684,7 +929,41 @@ export default function Workstation() {
                 ][tab]}
             <span>STEP 0{tab + 1}</span>
           </div>
+          {compact && (
+            <div
+              className="compact-tabs"
+              role="tablist"
+              aria-label="工作区面板"
+            >
+              <button
+                id="controls-tab"
+                role="tab"
+                aria-selected={!showDetails}
+                aria-controls="workflow-controls"
+                onClick={() =>
+                  setPanelChoice({ path: pathname, tab: "controls" })
+                }
+              >
+                操作设置
+              </button>
+              <button
+                id="context-tab"
+                role="tab"
+                aria-selected={showDetails}
+                aria-controls="workflow-context"
+                onClick={() =>
+                  setPanelChoice({ path: pathname, tab: "details" })
+                }
+              >
+                详情与结果
+              </button>
+            </div>
+          )}
           <div
+            id="workflow-controls"
+            role={compact ? "tabpanel" : undefined}
+            aria-labelledby={compact ? "controls-tab" : undefined}
+            hidden={showDetails}
             className={
               "control-content " +
               (acquisition ? "acquisition-controls" : "recognition-controls")
@@ -719,7 +998,10 @@ export default function Workstation() {
                         <div>
                           <strong>{f.id}</strong>
                           <small>
-                            {f.source} · {(f.bytes / 1024 / 1024).toFixed(1)} MB
+                            <span className={"source-badge source-" + f.source}>
+                              {f.source}
+                            </span>{" "}
+                            · {(f.bytes / 1024 / 1024).toFixed(1)} MB
                           </small>
                         </div>
                         {f.has_artifacts && (
@@ -1039,6 +1321,17 @@ export default function Workstation() {
               </>
             )}
           </div>
+          {compact && (
+            <div
+              id="workflow-context"
+              role="tabpanel"
+              aria-labelledby="context-tab"
+              hidden={!showDetails}
+              className="compact-context"
+            >
+              {contextContent}
+            </div>
+          )}
           <div className="panel-bottom">
             <ShieldCheck size={14} /> 所有点云与轨迹均以毫米为单位
           </div>
@@ -1131,6 +1424,17 @@ export default function Workstation() {
                   ? "该帧尚无可用视图，请先完成识别"
                   : "选择或上传点云帧，开始识别与轨迹规划"}
               </p>
+              {!loading && (
+                <button
+                  className="primary empty-action"
+                  disabled={busy || !!active}
+                  onClick={() =>
+                    fid ? void task("recognize") : router.push("/scan")
+                  }
+                >
+                  {fid ? "识别当前帧" : "前往上传点云"}
+                </button>
+              )}
               <span>POINT CLOUD · CAMERA COORDINATES · mm</span>
             </div>
           )}
@@ -1195,157 +1499,7 @@ export default function Workstation() {
               {!acquisition && tab === 0 ? `${visibleSeams.length} 条` : ""}
             </span>
           </div>
-          <div className="context-content">
-            {acquisition ? (
-              <>
-                <h3>当前帧信息</h3>
-                <h2 className="teal-heading">{fid || "尚未选择帧"}</h2>
-                <p>点数 {cloud?.header.n.toLocaleString() ?? "—"}</p>
-                <p>来源 {frames.find((f) => f.id === fid)?.source ?? "—"}</p>
-                <p>
-                  识别状态{" "}
-                  {frames.find((f) => f.id === fid)?.has_artifacts
-                    ? "有历史结果"
-                    : "待识别"}
-                </p>
-                <p>
-                  大小{" "}
-                  {(
-                    (frames.find((f) => f.id === fid)?.bytes ?? 0) /
-                    1024 /
-                    1024
-                  ).toFixed(1)}{" "}
-                  MB
-                </p>
-              </>
-            ) : tab === 1 ? (
-              <>
-                <h3>标定结果</h3>
-                <h2 className="teal-heading">
-                  {calib.uncalibrated ? "尚未标定" : "✓ 标定已保存"}
-                </h2>
-                <p>标定标签 {calib.calib_tag}</p>
-                <p>最大残差 {calib.max_dev_mm ?? "—"} mm</p>
-                <p>平均残差 {calib.mean_dev_mm ?? "—"} mm</p>
-                <p>点对数量 {pairs.length}</p>
-                <p>T camera → robot</p>
-                <div className="help">
-                  矩阵由后端保存。此处仅显示已确认返回的数据。
-                </div>
-              </>
-            ) : tab === 3 ? (
-              <>
-                <h3>TCP 实时信息</h3>
-                {hasProgram ? (
-                  <>
-                    <h2 className="teal-heading">
-                      X {samplePath(points, distance).point[0].toFixed(2)} mm
-                    </h2>
-                    <p>
-                      Y {samplePath(points, distance).point[1].toFixed(2)} mm
-                    </p>
-                    <p>
-                      Z {samplePath(points, distance).point[2].toFixed(2)} mm
-                    </p>
-                    <p>
-                      W / P / R{" "}
-                      {(
-                        program.wpr_list[
-                          samplePath(points, distance).segment
-                        ] ?? [180, 0, 0]
-                      ).join(" / ")}{" "}
-                      °
-                    </p>
-                    <p>
-                      路径 {distance.toFixed(1)} / {total.toFixed(1)} mm
-                    </p>
-                    <p>坐标系：相机系</p>
-                  </>
-                ) : (
-                  <div className="empty-small">
-                    生成当前焊缝的程序后显示真实 TCP 途经点及姿态。
-                  </div>
-                )}
-                {calib.uncalibrated && (
-                  <div className="warning danger-box">
-                    坐标仍是相机系，禁止上机。
-                  </div>
-                )}
-              </>
-            ) : tab === 4 ? (
-              <>
-                <h3>传输结果</h3>
-                {transfer ? (
-                  <>
-                    <h2 className="teal-heading">✓ 文件传输成功</h2>
-                    <p>远端路径 {transfer.remote_path}</p>
-                    <p>字节数 {transfer.bytes}</p>
-                    {transfer.existed_before && (
-                      <p className="warning">已覆盖控制器同名程序</p>
-                    )}
-                  </>
-                ) : (
-                  <div className="empty-small">
-                    尚未传输文件，请先生成程序并确认控制器连接参数。
-                  </div>
-                )}
-                <p>机器人启动：未执行</p>
-              </>
-            ) : (
-              <>
-                {" "}
-                <div className="context-summary">
-                  <div>
-                    <strong>{seams.length.toString().padStart(2, "0")}</strong>
-                    <small>识别焊缝</small>
-                  </div>
-                  <div>
-                    <strong>
-                      {seams.reduce((a, s) => a + s.length_mm, 0).toFixed(0)}
-                      <em> mm</em>
-                    </strong>
-                    <small>焊缝总长</small>
-                  </div>
-                </div>
-                <h3>
-                  识别结果 <span>↑ ↓ 切换</span>
-                </h3>
-                {seamList}
-                <div className="section-divider" />
-                <h3>
-                  <Crosshair size={16} />
-                  所选焊缝详情
-                </h3>
-                {selectedSeam ? (
-                  <dl>
-                    <dt>焊缝编号</dt>
-                    <dd>#{selectedSeam.id}</dd>
-                    <dt>工件形状</dt>
-                    <dd>{selectedSeam.shape}</dd>
-                    <dt>连接类型</dt>
-                    <dd>{selectedSeam.type}</dd>
-                    <dt>长度</dt>
-                    <dd>{selectedSeam.length_mm.toFixed(2)} mm</dd>
-                    <dt>坐标系</dt>
-                    <dd>相机坐标系</dd>
-                  </dl>
-                ) : (
-                  <div className="empty-small">
-                    选择焊缝后查看几何详情，并进行程序生成与预演。
-                  </div>
-                )}
-                <div className="tip">
-                  <ShieldCheck size={19} />
-                  <p>
-                    让轨迹先被看见
-                    <small>
-                      生成程序后，在三维视图中预演 TCP 轨迹，确认标定与途经点。
-                    </small>
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
+          {!compact && contextContent}
         </aside>
       </div>
       <section
@@ -1464,8 +1618,20 @@ export default function Workstation() {
             key={name}
             className={!acquisition && tab === i ? "active" : ""}
             onClick={() => setTab(i)}
+            aria-label={name}
+            aria-describedby={"workflow-step-state-" + i}
           >
+            <i className={"step-state " + stepStates[i]} aria-hidden="true" />
             {name}
+            <span id={"workflow-step-state-" + i} className="sr-only">
+              {stateLabels[stepStates[i] as keyof typeof stateLabels]}
+              {i >= 3 && calib.uncalibrated ? "；未标定，禁止上机" : ""}
+            </span>
+            {i >= 3 && calib.uncalibrated && (
+              <span className="step-warning" title="当前帧未标定，禁止上机">
+                !
+              </span>
+            )}
           </button>
         ))}
       </nav>
