@@ -1,0 +1,1536 @@
+"use client";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import SiteHeader from "./SiteHeader";
+import { samplePath } from "@/lib/core";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Activity,
+  Box,
+  ChevronDown,
+  CloudUpload,
+  Crosshair,
+  Download,
+  FileCode2,
+  Layers,
+  Play,
+  Radio,
+  RotateCcw,
+  ScanLine,
+  Send,
+  Settings2,
+  ShieldCheck,
+  Terminal,
+  Workflow,
+  SunMoon,
+} from "lucide-react";
+import {
+  api,
+  ApiError,
+  arcLengths,
+  Calib,
+  Cloud,
+  Frame,
+  Job,
+  parseCloud,
+  pathAtTime,
+  pathDuration,
+  Program,
+  Seam,
+} from "@/lib/core";
+const CloudView = dynamic(() => import("@/components/CloudView"), {
+  ssr: false,
+});
+const initialProgram = {
+  name: "",
+  comment: "",
+  utool: 1,
+  uframe: 0,
+  weld: false,
+  inst: "Weld",
+  weld_prog: 1,
+  weld_set: 1,
+  speed_weld: 30,
+  eps: 0.5,
+  max_seg: 50,
+  wpr: "180,0,0",
+};
+const initialFtp = {
+  host: "",
+  port: 21,
+  user: "anonymous",
+  password: "",
+  remote_dir: "MD:",
+  passive: true,
+  timeout_s: 15,
+};
+const initialRecognition = {
+  voxel: 1.5,
+  tile: 200,
+  stride: 120,
+  smooth_k: 16,
+  smooth_r: 3,
+  max_gap: 0.008,
+  min_len: 50,
+};
+function Fields({
+  value,
+  onChange,
+  labels = {},
+}: {
+  value: Record<string, string | number | boolean>;
+  onChange: (v: Record<string, string | number | boolean>) => void;
+  labels?: Record<string, string>;
+}) {
+  return (
+    <div className="fields">
+      {Object.entries(value).map(([key, v]) => (
+        <label key={key}>
+          {labels[key] ?? key}
+          {typeof v === "boolean" ? (
+            <input
+              type="checkbox"
+              checked={v}
+              onChange={(e) => onChange({ ...value, [key]: e.target.checked })}
+            />
+          ) : (
+            <input
+              type={
+                typeof v === "number"
+                  ? "number"
+                  : key === "password"
+                    ? "password"
+                    : "text"
+              }
+              step="any"
+              autoComplete={key === "password" ? "new-password" : "off"}
+              value={v}
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  [key]:
+                    typeof v === "number"
+                      ? Number(e.target.value)
+                      : e.target.value,
+                })
+              }
+            />
+          )}
+        </label>
+      ))}
+    </div>
+  );
+}
+export default function Workstation() {
+  const pathname = usePathname(),
+    router = useRouter();
+  const routes = [
+    "/recognize",
+    "/calibration",
+    "/seams",
+    "/program",
+    "/transfer",
+  ];
+  const tab = Math.max(0, routes.indexOf(pathname));
+  const acquisition = pathname === "/scan";
+  const setTab = (i: number) => router.push(routes[i]);
+  const pageTitle = acquisition
+    ? "数据采集与管理"
+    : [
+        "AI焊缝识别",
+        "坐标标定",
+        "焊缝管理",
+        "程序生成与轨迹预演",
+        "机器人程序下发",
+      ][tab];
+  const [frames, setFrames] = useState<Frame[]>([]),
+    [fid, setFid] = useState(""),
+    [cloud, setCloud] = useState<Cloud | null>(null),
+    [seams, setSeams] = useState<Seam[]>([]),
+    [selected, setSelected] = useState<number | null>(null),
+    [health, setHealth] = useState<{
+      model_ok: boolean;
+      cpp_ok: boolean;
+      model_error?: string;
+    } | null>(null),
+    [calib, setCalib] = useState<Calib>({
+      calib_tag: "未标定",
+      uncalibrated: true,
+    });
+  const [mode, setMode] = useState("semantic"),
+    [size, setSize] = useState(2),
+    [reset, setReset] = useState(0),
+    [reuse, setReuse] = useState(true),
+    [recognition, setRecognition] = useState(initialRecognition),
+    [scan, setScan] = useState({
+      scan_ms: 2500,
+      exp_us: 300,
+      near: 400,
+      far: 800,
+      loose: false,
+    }),
+    [programForm, setProgramForm] = useState(initialProgram),
+    [ftp, setFtp] = useState(initialFtp),
+    [program, setProgram] = useState<Program | null>(null),
+    [programSeam, setProgramSeam] = useState<number | null>(null);
+  const [jobs, setJobs] = useState<Job[]>([]),
+    [active, setActive] = useState<string | null>(null),
+    [busy, setBusy] = useState(false),
+    [drawer, setDrawer] = useState(false),
+    [toast, setToast] = useState(""),
+    [events, setEvents] = useState<string[]>([]),
+    [dark, setDark] = useState(false),
+    [playing, setPlaying] = useState(false),
+    [seconds, setSeconds] = useState(0),
+    [speed, setSpeed] = useState(1),
+    [pending, setPending] = useState<string | null>(null),
+    [loading, setLoading] = useState(false),
+    [transfer, setTransfer] = useState<{
+      bytes: number;
+      remote_path: string;
+      existed_before: boolean;
+    } | null>(null);
+  const [pairs, setPairs] = useState<number[][]>(
+      Array.from({ length: 3 }, () => [0, 0, 0, 0, 0, 0]),
+    ),
+    [advanced, setAdvanced] = useState(""),
+    [calibMode, setCalibMode] = useState(false);
+  const cache = useRef(new Map<string, Cloud>()),
+    generation = useRef(0),
+    taskLock = useRef(false),
+    currentFrame = useRef(fid);
+  useEffect(() => {
+    currentFrame.current = fid;
+  }, [fid]);
+  const notify = useCallback(
+    (message: string) => {
+      setToast(message);
+      setEvents((old) => [
+        ...old,
+        `${new Date().toLocaleTimeString()}  ${message}`,
+      ]);
+    },
+    [setToast, setEvents],
+  );
+  const fail = useCallback(
+    (error: unknown) =>
+      notify(
+        error instanceof ApiError && error.status === 409
+          ? "当前已有采集或识别任务，请稍候再试"
+          : error instanceof Error
+            ? error.message
+            : "操作失败",
+      ),
+    [notify],
+  );
+  const refreshFrames = useCallback(async () => {
+    const data = await api<{ frames: Frame[] }>("/frames");
+    setFrames(data.frames);
+    return data.frames;
+  }, []);
+  const loadFrame = useCallback(
+    async (id: string, invalidate = false) => {
+      const version = ++generation.current;
+      setLoading(true);
+      setCloud(null);
+      setSeams([]);
+      setSelected(null);
+      setProgram(null);
+      setTransfer(null);
+      setProgramSeam(null);
+      setPlaying(false);
+      setSeconds(0);
+      setCalib({ calib_tag: "未标定", uncalibrated: true });
+      if (invalidate) cache.current.delete(id);
+      const encoded = encodeURIComponent(id);
+      const results = await Promise.allSettled([
+        cache.current.has(id)
+          ? Promise.resolve(cache.current.get(id)!)
+          : fetch("/api/view/" + encoded).then(async (r) => {
+              if (!r.ok)
+                throw new ApiError(
+                  r.status,
+                  "暂无识别结果，请先识别或复用历史结果",
+                );
+              const value = parseCloud(await r.arrayBuffer());
+              cache.current.set(id, value);
+              return value;
+            }),
+        api<{ seams: Seam[] }>("/seams/" + encoded),
+        api<Calib>("/calib/" + encoded),
+      ]);
+      if (version !== generation.current) return;
+      const [view, list, cal] = results;
+      if (view.status === "fulfilled") setCloud(view.value);
+      else if (!(view.reason instanceof ApiError && view.reason.status === 404))
+        fail(view.reason);
+      if (list.status === "fulfilled") {
+        setSeams(list.value.seams);
+        setSelected(list.value.seams[0]?.id ?? null);
+      } else if (!(
+        list.reason instanceof ApiError && list.reason.status === 404
+      ))
+        fail(list.reason);
+      if (cal.status === "fulfilled") setCalib(cal.value);
+      else fail(cal.reason);
+      setLoading(false);
+    },
+    [fail],
+  );
+  useEffect(() => {
+    void Promise.resolve().then(() => {
+      api<typeof health>("/health")
+        .then(setHealth)
+        .catch(() =>
+          notify("无法连接 FastAPI 后端，请检查 8000 端口与 BACKEND_ORIGIN"),
+        );
+      refreshFrames()
+        .then((list) => {
+          if (list.length) setFid(list[0].id);
+        })
+        .catch(fail);
+      const saved = localStorage.getItem("weld-ftp");
+      if (saved)
+        try {
+          const data = JSON.parse(saved);
+          queueMicrotask(() =>
+            setFtp({ ...initialFtp, ...data, password: "" }),
+          );
+        } catch {
+          /* ignore invalid local settings */
+        }
+    });
+  }, [refreshFrames, fail, notify]);
+  useEffect(() => {
+    if (fid) void Promise.resolve().then(() => loadFrame(fid));
+  }, [fid, loadFrame]);
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 4000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+  useEffect(() => {
+    if (!active) return;
+    let stopped = false,
+      timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      if (stopped) return;
+      if (document.hidden) {
+        timer = setTimeout(poll, 1500);
+        return;
+      }
+      try {
+        const job = await api<Job>("/jobs/" + encodeURIComponent(active));
+        if (stopped) return;
+        setJobs((old) =>
+          [job, ...old.filter((j) => j.id !== job.id)].slice(0, 20),
+        );
+        if (job.state === "done" || job.state === "error") {
+          setActive(null);
+          taskLock.current = false;
+          if (job.state === "error")
+            notify(
+              (job.error ?? job.log.at(-1) ?? "任务失败") +
+                (job.kind === "scan" ? "；本机可能未接相机，请检查连接" : ""),
+            );
+          else {
+            notify(
+              `任务完成 · 焊缝 ${job.result?.n_seams ?? "—"} 条 · ${job.result?.seconds ?? job.seconds ?? "—"} 秒`,
+            );
+            await refreshFrames();
+            if (currentFrame.current)
+              await loadFrame(currentFrame.current, true);
+          }
+          return;
+        }
+      } catch (error) {
+        fail(error);
+        setActive(null);
+        taskLock.current = false;
+        return;
+      }
+      timer = setTimeout(poll, 1500);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+    };
+  }, [active, notify, fail, refreshFrames, loadFrame]);
+  useEffect(() => {
+    if (!playing || !program) return;
+    let last = performance.now(),
+      raf = 0;
+    const tick = (now: number) => {
+      const delta = (now - last) / 1000;
+      last = now;
+      setSeconds((t) => {
+        const next = Math.min(
+          t + delta * speed,
+          pathDuration(program.waypoints_cam_mm),
+        );
+        if (next >= pathDuration(program.waypoints_cam_mm)) setPlaying(false);
+        return next;
+      });
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [playing, program, speed]);
+  async function task(kind: "scan" | "recognize") {
+    if (taskLock.current) return;
+    taskLock.current = true;
+    setBusy(true);
+    try {
+      const payload =
+        kind === "scan"
+          ? {
+              scan_ms: scan.scan_ms,
+              exp_us: scan.exp_us,
+              dist: [scan.near, scan.far],
+              loose: scan.loose,
+            }
+          : { frame: fid, reuse_artifacts: reuse, ...recognition };
+      const { job_id } = await api<{ job_id: string }>("/" + kind, payload);
+      setJobs((old) =>
+        [
+          {
+            id: job_id,
+            kind,
+            state: "running",
+            log: ["任务已受理，等待后端返回日志…"],
+          },
+          ...old,
+        ].slice(0, 20),
+      );
+      setActive(job_id);
+      setDrawer(true);
+    } catch (e) {
+      taskLock.current = false;
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function upload(file?: File) {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".pcd"))
+      return notify("请选择 .pcd 点云文件");
+    if (file.size > 300 * 1024 * 1024) return notify("文件超过 300MB 上限");
+    setBusy(true);
+    try {
+      const id = file.name.replace(/\.pcd$/i, "");
+      await api("/frames/" + encodeURIComponent(id), file, "PUT");
+      await refreshFrames();
+      if (fid === id) await loadFrame(id, true);
+      else setFid(id);
+      notify("点云上传成功");
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function saveCalib(clear = false) {
+    setBusy(true);
+    try {
+      const payload = clear
+        ? { frame: fid, clear: true }
+        : calibMode
+          ? {
+              frame: fid,
+              ...(() => {
+                const parsed = JSON.parse(advanced);
+                return Array.isArray(parsed) ? { matrix: parsed } : parsed;
+              })(),
+            }
+          : {
+              frame: fid,
+              pairs: pairs.map((row) => ({
+                cam: row.slice(0, 3),
+                base: row.slice(3, 6),
+              })),
+            };
+      const result = await api<Calib>("/calib", payload);
+      setCalib({ ...result, uncalibrated: clear, has_calib: !clear });
+      setProgram(null);
+      setTransfer(null);
+      setPlaying(false);
+      setSeconds(0);
+      notify(
+        clear
+          ? "标定已清除"
+          : `标定已保存 · 最大残差 ${result.max_dev_mm ?? "—"} mm`,
+      );
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  }
+  async function generate(confirmed = false) {
+    if (selected === null) return notify("请先选择焊缝");
+    if (programForm.name && !/^[A-Z][A-Z0-9_]{0,7}$/.test(programForm.name))
+      return notify(
+        "程序名须为大写字母开头，最多 8 位，仅含大写字母、数字及下划线",
+      );
+    if (
+      programForm.wpr.split(",").length !== 3 ||
+      programForm.wpr
+        .split(",")
+        .some((v) => !v.trim() || !Number.isFinite(Number(v)))
+    )
+      return notify("WPR 须为逗号分隔的三个数字");
+    if (calib.uncalibrated && !confirmed) return setPending("uncalibrated");
+    setBusy(true);
+    try {
+      const result = await api<Program>("/program", {
+        frame: fid,
+        seam_id: selected,
+        ...programForm,
+      });
+      setProgram(result);
+      setTransfer(null);
+      setProgramSeam(selected);
+      setSeconds(0);
+      notify("程序已生成，仅供预演、下载与文件下发");
+    } catch (e) {
+      if (
+        e instanceof ApiError &&
+        e.status === 400 &&
+        /5000|坐标|超限/.test(e.message)
+      )
+        notify("坐标超出允许范围，请先完成标定");
+      else fail(e);
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  }
+  async function push() {
+    if (!program || programSeam !== selected)
+      return notify("请先为当前焊缝生成程序");
+    setBusy(true);
+    try {
+      const result = await api<{
+        bytes: number;
+        remote_path: string;
+        existed_before: boolean;
+      }>("/push", { frame: fid, seam_id: selected, ...ftp });
+      setTransfer(result);
+      const { password: _, ...safe } = ftp;
+      void _;
+      localStorage.setItem("weld-ftp", JSON.stringify(safe));
+      notify(
+        `已下发 ${result.bytes} 字节 → ${result.remote_path}${result.existed_before ? "；已覆盖控制器同名程序" : ""}`,
+      );
+    } catch (e) {
+      fail(e);
+    } finally {
+      setBusy(false);
+      setPending(null);
+    }
+  }
+  const selectedSeam = seams.find((s) => s.id === selected),
+    visibleSeams = seams.filter((s) => s.length_mm >= recognition.min_len),
+    hasProgram = program && programSeam === selected;
+  const points = hasProgram ? program.waypoints_cam_mm : [],
+    total = arcLengths(points).at(-1) ?? 0,
+    distance = pathAtTime(points, seconds),
+    duration = pathDuration(points);
+  const stepNames = [
+    "帧与识别",
+    "坐标标定",
+    "焊缝管理",
+    "程序与预演",
+    "FTP 下发",
+  ];
+  const seamList = (
+    <div
+      className="seam-list"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (!["ArrowUp", "ArrowDown"].includes(e.key)) return;
+        e.preventDefault();
+        const index = visibleSeams.findIndex((s) => s.id === selected);
+        setSelected(
+          visibleSeams[
+            Math.max(
+              0,
+              Math.min(
+                visibleSeams.length - 1,
+                index + (e.key === "ArrowDown" ? 1 : -1),
+              ),
+            )
+          ]?.id ?? null,
+        );
+        setPlaying(false);
+      }}
+    >
+      {visibleSeams.length ? (
+        visibleSeams.map((s) => (
+          <div
+            className={"seam-card " + (s.id === selected ? "selected" : "")}
+            key={s.id}
+          >
+            <button
+              className="seam-title"
+              onClick={() => {
+                setSelected(s.id);
+                setPlaying(false);
+              }}
+            >
+              <span>
+                <i />
+                焊缝 #{String(s.id).padStart(2, "0")}
+              </span>
+              <strong>
+                {s.length_mm.toFixed(1)} <small>mm</small>
+              </strong>
+            </button>
+            <p>
+              {s.shape} <span>·</span> {s.type}
+            </p>
+            <div className="seam-actions">
+              {["查看", "预演", "生成 .LS", "下发"].map((action, i) => (
+                <button
+                  key={action}
+                  onClick={() => {
+                    setSelected(s.id);
+                    setPlaying(false);
+                    if (i === 1) {
+                      setTab(3);
+                      if (programSeam !== s.id)
+                        notify("请先生成当前焊缝程序，以获取真实预演途经点");
+                    }
+                    if (i === 2) setTab(3);
+                    if (i === 3) setTab(4);
+                  }}
+                >
+                  {action}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))
+      ) : (
+        <div className="empty-small">
+          {seams.length
+            ? "没有满足最短长度的焊缝，请调整过滤值"
+            : "暂无焊缝，请先选择有结果的帧或执行识别。"}
+        </div>
+      )}
+    </div>
+  );
+  return (
+    <main className={dark ? "workstation dark" : "workstation"}>
+      <SiteHeader />
+      <div className="page-heading">
+        <Link href="/">← 返回首页 / 功能中心</Link>
+        <h1>{pageTitle}</h1>
+      </div>
+      <div className="status-strip">
+        {" "}
+        <div className="health">
+          <span
+            title={health?.model_error ?? "模型健康状态"}
+            className={health?.model_ok ? "ok" : "warn"}
+          >
+            <i />
+            模型{health?.model_ok ? "就绪" : "未就绪"}
+          </span>
+          <span
+            title="缺失时请编译后端 C++ 解算器"
+            className={health?.cpp_ok ? "ok" : "warn"}
+          >
+            <i />
+            C++ 解算器
+          </span>
+          <span
+            className={
+              calib.uncalibrated
+                ? "danger"
+                : (calib.max_dev_mm ?? 0) > 1.5
+                  ? "warn"
+                  : "ok"
+            }
+          >
+            <i />
+            {calib.uncalibrated ? "未标定" : "已标定"}
+          </span>
+        </div>
+        <button
+          className="icon-button"
+          aria-label="切换深浅主题"
+          onClick={() => setDark(!dark)}
+        >
+          <SunMoon size={19} />
+        </button>
+      </div>
+      <div className="panels">
+        <aside className="control-panel">
+          <div className="panel-title">
+            <Workflow size={17} />
+            {acquisition
+              ? "点云帧管理"
+              : [
+                  "识别任务",
+                  "标定点管理",
+                  "焊缝管理",
+                  "程序参数",
+                  "控制器连接",
+                ][tab]}
+            <span>STEP 0{tab + 1}</span>
+          </div>
+          <div
+            className={
+              "control-content " +
+              (acquisition ? "acquisition-controls" : "recognition-controls")
+            }
+          >
+            {tab === 0 && (
+              <>
+                <h3 className="frames-heading">
+                  点云帧 <span>{frames.length} FRAMES</span>
+                </h3>
+                <label className="upload">
+                  <CloudUpload size={24} />
+                  <strong>上传点云文件</strong>
+                  <small>PCD 格式 · 最大 300 MB</small>
+                  <input
+                    type="file"
+                    accept=".pcd"
+                    disabled={busy || !!active}
+                    onChange={(e) => void upload(e.target.files?.[0])}
+                  />
+                </label>
+                <div className="frame-list">
+                  {frames.length ? (
+                    frames.map((f) => (
+                      <button
+                        key={f.id}
+                        className={fid === f.id ? "chosen" : ""}
+                        onClick={() => setFid(f.id)}
+                        disabled={!!active || busy}
+                      >
+                        <Box size={18} />
+                        <div>
+                          <strong>{f.id}</strong>
+                          <small>
+                            {f.source} · {(f.bytes / 1024 / 1024).toFixed(1)} MB
+                          </small>
+                        </div>
+                        {f.has_artifacts && (
+                          <span className="artifact">有结果</span>
+                        )}
+                      </button>
+                    ))
+                  ) : (
+                    <div className="empty-small">
+                      没有可用帧，上传 .pcd 文件开始；离线演示需后端提供 sw2_e30
+                      历史产物。
+                    </div>
+                  )}
+                </div>
+                <div className="recognition-settings">
+                  <div className="section-divider" />
+                  <h3>
+                    <ScanLine size={16} />
+                    识别设置
+                  </h3>
+                  <label className="toggle-row">
+                    <div>
+                      复用历史结果<small>离线演示 · 无需加载模型</small>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={reuse}
+                      onChange={(e) => setReuse(e.target.checked)}
+                    />
+                  </label>
+                  <details>
+                    <summary>
+                      <Settings2 size={15} />
+                      高级参数
+                      <ChevronDown size={14} />
+                    </summary>
+                    <Fields
+                      value={recognition}
+                      onChange={(v) => setRecognition(v as typeof recognition)}
+                    />
+                  </details>
+                  <button
+                    className="primary full"
+                    disabled={!fid || busy || !!active}
+                    onClick={() => void task("recognize")}
+                  >
+                    <ScanLine size={17} />
+                    {active ? "任务进行中…" : "开始识别"}
+                  </button>
+                </div>
+                <details className="camera" open={acquisition}>
+                  <summary>
+                    <Radio size={16} />
+                    相机采集
+                    <ChevronDown size={14} />
+                  </summary>
+                  <Fields
+                    value={scan}
+                    onChange={(v) => setScan(v as typeof scan)}
+                    labels={{
+                      scan_ms: "扫描时长 ms",
+                      exp_us: "曝光 μs",
+                      near: "最近距离 mm",
+                      far: "最远距离 mm",
+                      loose: "散点输出",
+                    }}
+                  />
+                  <button
+                    className="secondary full"
+                    disabled={
+                      busy ||
+                      !!active ||
+                      scan.scan_ms < 500 ||
+                      scan.scan_ms > 20000 ||
+                      scan.exp_us < 10 ||
+                      scan.exp_us > 5000 ||
+                      scan.near >= scan.far
+                    }
+                    onClick={() => void task("scan")}
+                  >
+                    采集点云
+                  </button>
+                </details>
+              </>
+            )}
+            {tab === 1 && (
+              <>
+                <h3>相机 → 基座坐标</h3>
+                <p className="help">
+                  每帧独立标定。至少提供 3 组非共线点对，所有坐标单位为毫米。
+                </p>
+                <label className="toggle-row">
+                  JSON / 4×4 矩阵模式
+                  <input
+                    type="checkbox"
+                    checked={calibMode}
+                    onChange={(e) => setCalibMode(e.target.checked)}
+                  />
+                </label>
+                {calibMode ? (
+                  <textarea
+                    rows={10}
+                    placeholder='{"matrix": [[1,0,0,0], ...]}'
+                    value={advanced}
+                    onChange={(e) => setAdvanced(e.target.value)}
+                  />
+                ) : (
+                  <div className="pair-list">
+                    {pairs.map((row, i) => (
+                      <div key={i}>
+                        <h4>
+                          点对 {i + 1}
+                          <button
+                            onClick={() =>
+                              setPairs(pairs.filter((_, j) => i !== j))
+                            }
+                          >
+                            删除
+                          </button>
+                        </h4>
+                        <small>相机 X / Y / Z　→　基座 X / Y / Z</small>
+                        <div className="pair-grid">
+                          {row.map((v, j) => (
+                            <input
+                              aria-label={`点对${i + 1}坐标${j + 1}`}
+                              key={j}
+                              type="number"
+                              value={v}
+                              onChange={(e) =>
+                                setPairs(
+                                  pairs.map((r, k) =>
+                                    k === i
+                                      ? r.map((n, l) =>
+                                          l === j ? Number(e.target.value) : n,
+                                        )
+                                      : r,
+                                  ),
+                                )
+                              }
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      className="secondary full"
+                      onClick={() => setPairs([...pairs, [0, 0, 0, 0, 0, 0]])}
+                    >
+                      ＋ 添加点对
+                    </button>
+                  </div>
+                )}
+                <button
+                  className="primary full"
+                  disabled={!fid || busy || (!calibMode && pairs.length < 3)}
+                  onClick={() => void saveCalib()}
+                >
+                  保存标定
+                </button>
+                <div className="info-box">
+                  标定：{calib.calib_tag}
+                  <br />
+                  最大残差：{calib.max_dev_mm ?? "—"} mm
+                  <br />
+                  平均残差：{calib.mean_dev_mm ?? "—"} mm
+                </div>
+                {(calib.max_dev_mm ?? 0) > 1.5 && (
+                  <div className="warning">
+                    最大残差超过 1.5mm，请检查点对精度后重新标定。
+                  </div>
+                )}
+                <button
+                  className="text-danger"
+                  disabled={!fid || busy}
+                  onClick={() => setPending("clear")}
+                >
+                  清除当前帧标定
+                </button>
+              </>
+            )}
+            {tab === 2 && (
+              <>
+                <h3>焊缝筛选</h3>
+                <label>
+                  最短长度 (mm)
+                  <input
+                    type="number"
+                    value={recognition.min_len}
+                    onChange={(e) =>
+                      setRecognition({
+                        ...recognition,
+                        min_len: Number(e.target.value),
+                      })
+                    }
+                  />
+                </label>
+                {seamList}
+              </>
+            )}
+            {tab === 3 && (
+              <>
+                <h3>FANUC 程序参数</h3>
+                <p className="help">
+                  当前焊缝 #{selected ?? "—"} · 默认生成空跑版
+                </p>
+                {calib.uncalibrated && (
+                  <div className="warning danger-box">
+                    未标定：坐标仍是相机系，禁止上机。
+                  </div>
+                )}
+                <Fields
+                  value={programForm}
+                  onChange={(v) => setProgramForm(v as typeof programForm)}
+                  labels={{
+                    name: "程序名（可留空）",
+                    comment: "备注（≤60字符）",
+                    weld: "包含焊接指令",
+                    wpr: "姿态 W,P,R（度）",
+                  }}
+                />
+                <button
+                  className="primary full"
+                  disabled={
+                    selected === null || busy || programForm.comment.length > 60
+                  }
+                  onClick={() => void generate()}
+                >
+                  <FileCode2 size={16} />
+                  生成 .LS 程序
+                </button>
+                {hasProgram && (
+                  <>
+                    <div className="section-divider" />
+                    {program.issues?.map((issue, i) => (
+                      <div key={i} className="warning">
+                        提示（不阻断）：
+                        {typeof issue === "string"
+                          ? issue
+                          : JSON.stringify(issue)}
+                      </div>
+                    ))}
+                    <div className="code-header">
+                      <strong>{program.ls_name}</strong>
+                      <button
+                        onClick={() =>
+                          navigator.clipboard
+                            .writeText(program.ls_text)
+                            .then(() => notify("程序已复制"))
+                            .catch(fail)
+                        }
+                      >
+                        复制
+                      </button>
+                      <a
+                        href={
+                          "/api/program/" +
+                          encodeURIComponent(
+                            program.ls_name.replace(/\.ls$/i, ""),
+                          ) +
+                          "/download"
+                        }
+                        download
+                      >
+                        <Download size={15} />
+                        下载
+                      </a>
+                    </div>
+                    <pre className="program-code">{program.ls_text}</pre>
+                    {calib.uncalibrated && (
+                      <div className="warning danger-box">
+                        禁止上机：当前程序使用相机系坐标。
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+            {tab === 4 && (
+              <>
+                <h3>控制器 FTP 连接</h3>
+                <p className="help">
+                  只传输 .LS 文件。程序选择和启动须由操作者在示教器上人工确认。
+                </p>
+                <Fields
+                  value={ftp}
+                  onChange={(v) => setFtp(v as typeof ftp)}
+                  labels={{
+                    host: "控制器地址",
+                    port: "FTP 端口",
+                    user: "用户名",
+                    password: "密码（不保存）",
+                    remote_dir: "目标目录",
+                    passive: "被动模式",
+                    timeout_s: "超时（秒）",
+                  }}
+                />
+                <div className="info-box">
+                  待发送程序：{hasProgram ? program.ls_name : "尚未生成"}
+                  <br />
+                  帧：{fid || "—"} / 焊缝：{selected ?? "—"}
+                </div>
+                <button
+                  className="primary full"
+                  disabled={busy || !ftp.host}
+                  onClick={() =>
+                    hasProgram
+                      ? setPending("push")
+                      : notify("请先为当前焊缝生成程序")
+                  }
+                >
+                  <Send size={16} />
+                  确认下发文件
+                </button>
+                <div className="warning">
+                  同名程序将被覆盖。T1 倍率不高于 10%、单段模式、手不离急停。
+                </div>
+              </>
+            )}
+          </div>
+          <div className="panel-bottom">
+            <ShieldCheck size={14} /> 所有点云与轨迹均以毫米为单位
+          </div>
+        </aside>
+        <section
+          className={"viewport " + (tab === 4 ? "transfer-viewport" : "")}
+        >
+          {tab === 4 && (
+            <div className="transfer-main">
+              <h3>程序传输</h3>
+              <div className="transfer-file">
+                <FileCode2 size={28} />
+                <h2>{hasProgram ? program.ls_name : "尚未生成程序"}</h2>
+                <p>
+                  FANUC ASCII 程序 /{" "}
+                  {hasProgram
+                    ? new TextEncoder().encode(program.ls_text).length
+                    : 0}{" "}
+                  字节
+                </p>
+              </div>
+              <h2 className="teal-heading">
+                {transfer ? "文件传输完成" : "等待文件传输"}
+              </h2>
+              <div
+                className={"transfer-progress " + (transfer ? "complete" : "")}
+              />
+              <p>
+                {transfer
+                  ? `${transfer.bytes} 字节 · ${transfer.remote_path}`
+                  : "请确认左侧连接参数，点击下发后进行二次确认。"}
+              </p>
+              <div className="warning">
+                文件传输成功不代表机器人已开始焊接。本系统不会启动机器人。
+              </div>
+            </div>
+          )}
+          <div className="view-toolbar">
+            <div>
+              <Layers size={17} />
+              <strong>
+                {acquisition
+                  ? "点云预览"
+                  : [
+                      "3D 识别结果",
+                      "坐标系与点对关系",
+                      "3D 焊缝视图",
+                      "轨迹预演 / 程序代码",
+                      "程序传输",
+                    ][tab]}
+              </strong>
+              <span className="live-dot" />
+              实时视图
+            </div>
+            <div className="view-switch">
+              {[
+                ["semantic", "语义"],
+                ["instance", "实例"],
+              ].map(([v, label]) => (
+                <button
+                  className={mode === v ? "active" : ""}
+                  key={v}
+                  onClick={() => setMode(v)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <CloudView
+            cloud={cloud}
+            seams={seams}
+            selected={selected}
+            mode={mode}
+            size={size}
+            reset={reset}
+            points={points}
+            wpr={hasProgram ? program.wpr_list : []}
+            distance={distance}
+            light={!dark}
+          />
+          {!cloud && (
+            <div className="viewport-empty">
+              <div className="empty-orbit">
+                <Box size={48} strokeWidth={1} />
+              </div>
+              <h2>{loading ? "正在加载点云…" : "准备探索三维焊缝"}</h2>
+              <p>
+                {fid
+                  ? "该帧尚无可用视图，请先完成识别"
+                  : "选择或上传点云帧，开始识别与轨迹规划"}
+              </p>
+              <span>POINT CLOUD · CAMERA COORDINATES · mm</span>
+            </div>
+          )}
+          <div className="view-controls">
+            <label>
+              点大小
+              <input
+                type="range"
+                min={1}
+                max={6}
+                value={size}
+                onChange={(e) => setSize(Number(e.target.value))}
+              />
+              <span>{size}</span>
+            </label>
+            <button onClick={() => setReset(reset + 1)}>
+              <RotateCcw size={15} />
+              重置视角
+            </button>
+          </div>
+          <div className="legend">
+            <span>
+              <i style={{ background: "#4682e6" }} />
+              钢管
+            </span>
+            <span>
+              <i style={{ background: "#32c850" }} />
+              钢筋
+            </span>
+            <span>
+              <i style={{ background: "#b432b4" }} />
+              扁钢
+            </span>
+            <span>
+              <i style={{ background: "#b4b4b4" }} />
+              背景
+            </span>
+          </div>
+          <div className="view-status">
+            <span>{cloud?.header.frame_id ?? "未加载帧"}</span>
+            <span>
+              {cloud?.header.n.toLocaleString() ?? 0} 点 / 原始{" "}
+              {cloud?.header.n_full.toLocaleString() ?? 0}
+            </span>
+            <span>{cloud?.header.n_instances ?? 0} 个实例</span>
+            <span>{cloud?.header.source ?? "—"}</span>
+          </div>
+        </section>
+        <aside className="context-panel">
+          <div className="panel-title">
+            <Activity size={17} />
+            {acquisition
+              ? "当前帧信息"
+              : tab === 1
+                ? "标定结果"
+                : tab === 3
+                  ? "TCP 实时信息"
+                  : tab === 4
+                    ? "传输结果"
+                    : "焊缝结果"}
+            <span>
+              {!acquisition && tab === 0 ? `${visibleSeams.length} 条` : ""}
+            </span>
+          </div>
+          <div className="context-content">
+            {acquisition ? (
+              <>
+                <h3>当前帧信息</h3>
+                <h2 className="teal-heading">{fid || "尚未选择帧"}</h2>
+                <p>点数 {cloud?.header.n.toLocaleString() ?? "—"}</p>
+                <p>来源 {frames.find((f) => f.id === fid)?.source ?? "—"}</p>
+                <p>
+                  识别状态{" "}
+                  {frames.find((f) => f.id === fid)?.has_artifacts
+                    ? "有历史结果"
+                    : "待识别"}
+                </p>
+                <p>
+                  大小{" "}
+                  {(
+                    (frames.find((f) => f.id === fid)?.bytes ?? 0) /
+                    1024 /
+                    1024
+                  ).toFixed(1)}{" "}
+                  MB
+                </p>
+              </>
+            ) : tab === 1 ? (
+              <>
+                <h3>标定结果</h3>
+                <h2 className="teal-heading">
+                  {calib.uncalibrated ? "尚未标定" : "✓ 标定已保存"}
+                </h2>
+                <p>标定标签 {calib.calib_tag}</p>
+                <p>最大残差 {calib.max_dev_mm ?? "—"} mm</p>
+                <p>平均残差 {calib.mean_dev_mm ?? "—"} mm</p>
+                <p>点对数量 {pairs.length}</p>
+                <p>T camera → robot</p>
+                <div className="help">
+                  矩阵由后端保存。此处仅显示已确认返回的数据。
+                </div>
+              </>
+            ) : tab === 3 ? (
+              <>
+                <h3>TCP 实时信息</h3>
+                {hasProgram ? (
+                  <>
+                    <h2 className="teal-heading">
+                      X {samplePath(points, distance).point[0].toFixed(2)} mm
+                    </h2>
+                    <p>
+                      Y {samplePath(points, distance).point[1].toFixed(2)} mm
+                    </p>
+                    <p>
+                      Z {samplePath(points, distance).point[2].toFixed(2)} mm
+                    </p>
+                    <p>
+                      W / P / R{" "}
+                      {(
+                        program.wpr_list[
+                          samplePath(points, distance).segment
+                        ] ?? [180, 0, 0]
+                      ).join(" / ")}{" "}
+                      °
+                    </p>
+                    <p>
+                      路径 {distance.toFixed(1)} / {total.toFixed(1)} mm
+                    </p>
+                    <p>坐标系：相机系</p>
+                  </>
+                ) : (
+                  <div className="empty-small">
+                    生成当前焊缝的程序后显示真实 TCP 途经点及姿态。
+                  </div>
+                )}
+                {calib.uncalibrated && (
+                  <div className="warning danger-box">
+                    坐标仍是相机系，禁止上机。
+                  </div>
+                )}
+              </>
+            ) : tab === 4 ? (
+              <>
+                <h3>传输结果</h3>
+                {transfer ? (
+                  <>
+                    <h2 className="teal-heading">✓ 文件传输成功</h2>
+                    <p>远端路径 {transfer.remote_path}</p>
+                    <p>字节数 {transfer.bytes}</p>
+                    {transfer.existed_before && (
+                      <p className="warning">已覆盖控制器同名程序</p>
+                    )}
+                  </>
+                ) : (
+                  <div className="empty-small">
+                    尚未传输文件，请先生成程序并确认控制器连接参数。
+                  </div>
+                )}
+                <p>机器人启动：未执行</p>
+              </>
+            ) : (
+              <>
+                {" "}
+                <div className="context-summary">
+                  <div>
+                    <strong>{seams.length.toString().padStart(2, "0")}</strong>
+                    <small>识别焊缝</small>
+                  </div>
+                  <div>
+                    <strong>
+                      {seams.reduce((a, s) => a + s.length_mm, 0).toFixed(0)}
+                      <em> mm</em>
+                    </strong>
+                    <small>焊缝总长</small>
+                  </div>
+                </div>
+                <h3>
+                  识别结果 <span>↑ ↓ 切换</span>
+                </h3>
+                {seamList}
+                <div className="section-divider" />
+                <h3>
+                  <Crosshair size={16} />
+                  所选焊缝详情
+                </h3>
+                {selectedSeam ? (
+                  <dl>
+                    <dt>焊缝编号</dt>
+                    <dd>#{selectedSeam.id}</dd>
+                    <dt>工件形状</dt>
+                    <dd>{selectedSeam.shape}</dd>
+                    <dt>连接类型</dt>
+                    <dd>{selectedSeam.type}</dd>
+                    <dt>长度</dt>
+                    <dd>{selectedSeam.length_mm.toFixed(2)} mm</dd>
+                    <dt>坐标系</dt>
+                    <dd>相机坐标系</dd>
+                  </dl>
+                ) : (
+                  <div className="empty-small">
+                    选择焊缝后查看几何详情，并进行程序生成与预演。
+                  </div>
+                )}
+                <div className="tip">
+                  <ShieldCheck size={19} />
+                  <p>
+                    让轨迹先被看见
+                    <small>
+                      生成程序后，在三维视图中预演 TCP 轨迹，确认标定与途经点。
+                    </small>
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </aside>
+      </div>
+      <section
+        className={"playback " + (tab !== 3 ? "playback-secondary" : "")}
+      >
+        <div>
+          <Play size={18} />
+          <strong>TCP 轨迹预演</strong>
+          <span>{hasProgram ? "相机系 · 100 mm/s" : "生成程序后解锁预演"}</span>
+        </div>
+        <button
+          aria-label={playing ? "暂停" : "播放"}
+          disabled={!hasProgram}
+          onClick={() => setPlaying(!playing)}
+        >
+          {playing ? "Ⅱ" : "▶"}
+        </button>
+        <button
+          aria-label="重播"
+          disabled={!hasProgram}
+          onClick={() => {
+            setSeconds(0);
+            setPlaying(true);
+          }}
+        >
+          <RotateCcw size={16} />
+        </button>
+        <input
+          aria-label="预演进度"
+          type="range"
+          min={0}
+          max={duration || 1}
+          step={0.001}
+          value={seconds}
+          disabled={!hasProgram}
+          onChange={(e) => setSeconds(Number(e.target.value))}
+        />
+        <code>
+          {distance.toFixed(1)} / {total.toFixed(1)} mm
+        </code>
+        <select
+          aria-label="预演速度"
+          value={speed}
+          onChange={(e) => setSpeed(Number(e.target.value))}
+        >
+          {[0.2, 0.5, 1, 1.5, 2, 3].map((v) => (
+            <option key={v} value={v}>
+              {v}×
+            </option>
+          ))}
+        </select>
+      </section>
+      <section className={"task-drawer " + (drawer ? "open" : "")}>
+        <button className="drawer-heading" onClick={() => setDrawer(!drawer)}>
+          <Terminal size={16} />
+          <strong>任务中心</strong>
+          <span>{active ? "任务执行中" : "当前无运行任务"}</span>
+          <small>{jobs.length} 个会话任务</small>
+          <ChevronDown size={16} />
+        </button>
+        {drawer && (
+          <div className="task-body">
+            <div className="task-history">
+              {jobs.length ? (
+                jobs.map((j) => (
+                  <details key={j.id} open={j.id === active}>
+                    <summary>
+                      {j.kind === "scan" ? "相机采集" : "焊缝识别"}{" "}
+                      <span>{j.state}</span>
+                    </summary>
+                    <pre>
+                      {j.log?.join("\n")}
+                      {j.error && "\n" + j.error}
+                    </pre>
+                  </details>
+                ))
+              ) : (
+                <span>本次会话暂无任务</span>
+              )}
+            </div>
+            <pre className="event-log">
+              {events.length
+                ? events.join("\n")
+                : "系统就绪，等待操作。\n所有任务日志与错误信息将在此保留。"}
+            </pre>
+          </div>
+        )}
+      </section>
+      <div className="workflow-pager">
+        <Link
+          href={
+            acquisition
+              ? "/"
+              : tab === 0
+                ? "/scan"
+                : routes[Math.max(0, tab - 1)]
+          }
+        >
+          ←{" "}
+          {acquisition
+            ? "返回首页"
+            : tab === 0
+              ? "数据采集与管理"
+              : stepNames[Math.max(0, tab - 1)]}
+        </Link>
+        <Link href={acquisition ? "/recognize" : routes[Math.min(4, tab + 1)]}>
+          {acquisition ? "AI焊缝识别" : stepNames[Math.min(4, tab + 1)]} →
+        </Link>
+      </div>
+      <nav className="steps" aria-label="工作流导航">
+        <Link className={acquisition ? "active" : ""} href="/scan">
+          数据采集与管理
+        </Link>
+        {stepNames.map((name, i) => (
+          <button
+            key={name}
+            className={!acquisition && tab === i ? "active" : ""}
+            onClick={() => setTab(i)}
+          >
+            {name}
+          </button>
+        ))}
+      </nav>
+      <footer>
+        <span>
+          <i />
+          WELD VISION 工作站
+        </span>
+        <span>相机系 (x, −y, z) · mm</span>
+        <span>Next.js / FastAPI</span>
+      </footer>
+      {toast && (
+        <div role="status" className="toast">
+          {toast}
+          <button onClick={() => setToast("")}>×</button>
+        </div>
+      )}
+      {pending && (
+        <div className="modal-backdrop">
+          <div
+            className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dialog-title"
+          >
+            <ShieldCheck size={30} />
+            <h2 id="dialog-title">
+              {pending === "uncalibrated"
+                ? "未标定程序警告"
+                : pending === "clear"
+                  ? "清除当前帧标定？"
+                  : "确认下发程序文件"}
+            </h2>
+            <p>
+              {pending === "uncalibrated"
+                ? "坐标仍是相机系，禁止上机。该程序仅可用于离线检查。确认继续生成？"
+                : pending === "clear"
+                  ? "清除后程序将使用相机系坐标，需要重新标定。"
+                  : `目标：${ftp.host}:${ftp.port}\n目录：${ftp.remote_dir}\n程序：${program?.ls_name}\n同名程序将被覆盖。本操作只传输文件，不启动机器人。`}
+            </p>
+            <div>
+              <button
+                className="secondary"
+                disabled={busy}
+                onClick={() => setPending(null)}
+              >
+                取消
+              </button>
+              <button
+                className="primary"
+                disabled={busy}
+                onClick={() =>
+                  pending === "uncalibrated"
+                    ? void generate(true)
+                    : pending === "clear"
+                      ? void saveCalib(true)
+                      : void push()
+                }
+              >
+                {busy ? "处理中…" : "确认继续"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </main>
+  );
+}
