@@ -39,6 +39,7 @@ test("hidden pages pause polling and resume the existing task on visibilitychang
   const state = await mockBackend(page);
   await page.goto("/recognize");
   await page.getByRole("button", { name: "开始识别", exact: true }).click();
+  await page.getByRole("button", { name: /任务中心/ }).click();
   await expect(page.locator(".task-history")).toContainText("后端任务仍在运行");
   await page.evaluate(() => {
     Object.defineProperty(document, "hidden", {

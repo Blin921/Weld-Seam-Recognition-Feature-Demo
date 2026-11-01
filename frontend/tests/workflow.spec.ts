@@ -120,6 +120,7 @@ test("frame, recognition, calibration, program safety and FTP workflow", async (
   ).toBeVisible();
   await expect(page.locator(".view-status")).toContainText("sw2_e30");
   await page.getByRole("button", { name: "开始识别" }).click();
+  await page.getByRole("button", { name: /任务中心/ }).click();
   await expect(page.locator(".task-history")).toContainText("复用历史产物完成");
   await page.getByRole("button", { name: "实例", exact: true }).click();
   await page.screenshot({

@@ -3058,3 +3058,185 @@ details,
     padding: 12px 18px 18px;
   }
 }
+/* Full dark palette takes precedence over the shared light workspace defaults. */
+.workstation.dark {
+  --surface: #172332;
+  --soft: #202e40;
+  --line: #304156;
+  --muted: #a5b5c9;
+  background: #101923;
+  color: #e2eaf4;
+  color-scheme: dark;
+}
+.workstation.dark .workspace-topbar,
+.workstation.dark > .status-strip,
+.workstation.dark .viewport,
+.workstation.dark .view-toolbar,
+.workstation.dark .control-panel,
+.workstation.dark .context-panel,
+.workstation.dark .playback,
+.workstation.dark .task-drawer {
+  background: var(--surface);
+  color: #e2eaf4;
+}
+.workstation.dark .workspace-brand,
+.workstation.dark .workspace-topbar h1,
+.workstation.dark .panel-title,
+.workstation.dark .view-toolbar strong,
+.workstation.dark .calibration-results h2 {
+  color: #e2eaf4;
+}
+.workstation.dark .fields input,
+.workstation.dark .pair-grid input,
+.workstation.dark textarea,
+.workstation.dark select,
+.workstation.dark .upload,
+.workstation.dark .frame-list > button,
+.workstation.dark .transfer-file,
+.workstation.dark .info-box,
+.workstation.dark .calibration-metric,
+.workstation.dark .view-switch,
+.workstation.dark .tip {
+  background: var(--soft);
+  color: #d9e5f3;
+  border-color: var(--line);
+}
+.workstation.dark .frame-list > button.chosen {
+  background: #213b57;
+  border-color: #477dc5;
+}
+.workstation.dark .frame-list strong,
+.workstation.dark .upload strong,
+.workstation.dark .fields label,
+.workstation.dark .context-content > p,
+.workstation.dark .view-controls label,
+.workstation.dark .view-controls button,
+.workstation.dark .legend,
+.workstation.dark .view-status,
+.workstation.dark .view-switch button {
+  color: #b7c7dc;
+}
+.workstation.dark input::placeholder,
+.workstation.dark textarea::placeholder {
+  color: #899cb2;
+}
+.workstation.dark .view-switch .active,
+.workstation.dark .view-switch .focus-toggle {
+  background: #27486a;
+  color: #dcecff;
+}
+.workstation.dark .calibration-flow .current > span {
+  background: #397ce6;
+  color: white;
+}
+.workstation.dark .calibration-flow .needs-review > span,
+.workstation.dark .calibration-result-icon.needs-review {
+  background: #493b25;
+  color: #f0c77e;
+}
+.workstation.dark .calibration-result-icon.pending {
+  background: var(--soft);
+  color: #96acc5;
+}
+.workstation.dark .compact-tabs [aria-selected="true"] {
+  background: #27486a;
+  color: #c5ddff;
+}
+.workstation.dark .seam-card.selected .seam-title {
+  color: #6fd9cb;
+}
+.workstation.dark .seam-actions button,
+.workstation.dark .steps .active,
+.workstation.dark .code-header a,
+.workstation.dark .calibration-results > .secondary {
+  color: #8bbcff;
+}
+.workstation.dark .steps > button,
+.workstation.dark .steps > a {
+  color: #adbed3;
+}
+.workstation.dark .steps .active {
+  color: #75d6c8;
+}
+.workstation.dark .step-warning {
+  background: #493b25;
+  color: #f0c77e;
+}
+.workstation.dark .health .ok {
+  color: #5ed1a4;
+}
+.workstation.dark .health .warn {
+  color: #ecc27d;
+}
+.workstation.dark .health .danger {
+  color: #f29797;
+}
+.workstation.dark .teal-heading {
+  color: #6fd9cb;
+}
+.workstation.dark .warning {
+  background: #352c21;
+  color: #ecc27d;
+  border-color: #6d542d;
+}
+.workstation.dark .danger-box {
+  background: #38252c;
+  color: #f3a3aa;
+  border-color: #70404c;
+}
+.workstation.dark .task-body {
+  background: #111b28;
+  color: #b7c7dc;
+}
+.workstation.dark .task-history {
+  border-color: var(--line);
+}
+.workstation.dark .task-history summary,
+.workstation.dark .event-log {
+  color: #b7c7dc;
+}
+.workstation .theme-toggle {
+  min-width: 32px;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  background: #e9f0fa;
+  color: #315f9a;
+  border: 1px solid #d0def0;
+}
+.workstation.dark .theme-toggle {
+  background: #29394e;
+  color: #ffd77a;
+  border: 1px solid #53677f;
+}
+.theme-toggle svg {
+  stroke: currentColor;
+  opacity: 1;
+  flex-shrink: 0;
+}
+.workstation.dark button:focus-visible,
+.workstation.dark a:focus-visible {
+  outline-color: #9cc6ff;
+}
+.workstation.dark .viewport-empty h2 {
+  color: #d7e4f4;
+}
+.workstation.dark .viewport-empty p,
+.workstation.dark .view-toolbar > div:first-child {
+  color: #a5b5c9;
+}
+.workstation.dark .empty-orbit {
+  border-color: #34485e;
+  color: #83a5ce;
+}
+.workstation.dark .source-demo,
+.workstation.dark .artifact {
+  background: #1c4542;
+  color: #89dbc9;
+}
+.workstation.dark .exit-demo {
+  color: #8ddccf;
+}
+.workstation.dark .program-code {
+  border: 1px solid var(--line);
+}

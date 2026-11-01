@@ -21,6 +21,7 @@ test("offline demo runs the visual workflow without API or controller requests",
   await expect(page.locator(".view-status")).toContainText("66,080");
   await expect(page.locator(".seam-card")).toHaveCount(3);
   await page.getByRole("button", { name: "开始识别", exact: true }).click();
+  await page.getByRole("button", { name: /任务中心/ }).click();
   await expect(page.locator(".task-history")).toContainText("未执行真实推理");
   await page.screenshot({
     path: "test-results/demo-recognition.png",

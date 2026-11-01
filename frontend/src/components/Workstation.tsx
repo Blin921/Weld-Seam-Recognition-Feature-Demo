@@ -28,7 +28,8 @@ import {
   ShieldCheck,
   Terminal,
   Workflow,
-  SunMoon,
+  Sun,
+  Moon,
 } from "lucide-react";
 import {
   api,
@@ -476,7 +477,6 @@ export default function Workstation() {
         ].slice(0, 20),
       );
       setActive(job_id);
-      setDrawer(true);
     } catch (e) {
       taskLock.current = false;
       fail(e);
@@ -964,11 +964,17 @@ export default function Workstation() {
           </span>
         </div>
         <button
-          className="icon-button"
+          className="icon-button theme-toggle"
           aria-label="切换深浅主题"
+          aria-pressed={dark}
+          title={dark ? "切换为浅色模式" : "切换为深色模式"}
           onClick={() => setDark(!dark)}
         >
-          <SunMoon size={19} />
+          {dark ? (
+            <Sun size={19} aria-hidden="true" />
+          ) : (
+            <Moon size={19} aria-hidden="true" />
+          )}
         </button>
       </div>
       {connectionIssue && (
@@ -1567,7 +1573,12 @@ export default function Workstation() {
         </select>
       </section>
       <section className={"task-drawer " + (drawer ? "open" : "")}>
-        <button className="drawer-heading" onClick={() => setDrawer(!drawer)}>
+        <button
+          className="drawer-heading"
+          aria-expanded={drawer}
+          aria-controls="task-center-content"
+          onClick={() => setDrawer(!drawer)}
+        >
           <Terminal size={16} />
           <strong>任务中心</strong>
           <span>{active ? "任务执行中" : "当前无运行任务"}</span>
@@ -1575,7 +1586,7 @@ export default function Workstation() {
           <ChevronDown size={16} />
         </button>
         {drawer && (
-          <div className="task-body">
+          <div className="task-body" id="task-center-content">
             <div className="task-history">
               {jobs.length ? (
                 jobs.map((j) => (
