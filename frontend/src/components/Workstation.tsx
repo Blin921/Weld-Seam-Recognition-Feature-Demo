@@ -9,7 +9,7 @@ import { useCompactLayout } from "@/lib/useCompactLayout";
 import { mergeCalibration } from "@/lib/calibration";
 import { CalibrationControls, CalibrationResults } from "./CalibrationPanel";
 import { samplePath } from "@/lib/core";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
   Box,
@@ -40,6 +40,7 @@ import {
   Frame,
   Job,
   parseCloud,
+  requireOk,
   pathAtTime,
   pathDuration,
   Program,
@@ -171,7 +172,7 @@ export default function Workstation() {
     [fid, setFid] = useState(""),
     [cloud, setCloud] = useState<Cloud | null>(null),
     [seams, setSeams] = useState<Seam[]>([]),
-    [selected, setSelected] = useState<number | null>(null),
+    [selectedId, setSelectedId] = useState<number | null>(null),
     [health, setHealth] = useState<{
       model_ok: boolean;
       cpp_ok: boolean;
@@ -184,7 +185,7 @@ export default function Workstation() {
   const [mode, setMode] = useState("semantic"),
     [size, setSize] = useState(2),
     [reset, setReset] = useState(0),
-    [reuse, setReuse] = useState(true),
+    [reuse, setReuse] = useState(false),
     [recognition, setRecognition] = useState(initialRecognition),
     [scan, setScan] = useState({
       scan_ms: 2500,
@@ -209,11 +210,36 @@ export default function Workstation() {
     [speed, setSpeed] = useState(1),
     [pending, setPending] = useState<string | null>(null),
     [loading, setLoading] = useState(false),
-    [transfer, setTransfer] = useState<{
+    [transferResult, setTransfer] = useState<{
+      frame: string;
+      seam: number | null;
+      minLength: number;
+      program: Program;
       bytes: number;
       remote_path: string;
       existed_before: boolean;
     } | null>(null);
+  const visibleSeams = useMemo(
+    () => seams.filter((s) => s.length_mm >= recognition.min_len),
+    [seams, recognition.min_len],
+  );
+  const selected = visibleSeams.some((s) => s.id === selectedId)
+    ? selectedId
+    : (visibleSeams[0]?.id ?? null);
+  const transfer =
+    transferResult &&
+    transferResult.frame === fid &&
+    transferResult.seam === selected &&
+    transferResult.minLength === recognition.min_len &&
+    transferResult.program === program
+      ? transferResult
+      : null;
+  function selectSeam(id: number | null) {
+    if (id !== selected) setTransfer(null);
+    setSelectedId(id);
+    setPlaying(false);
+    setSeconds(0);
+  }
   const drawer = drawerState.path === pathname && drawerState.open;
   const setDrawer = (open: boolean) => setDrawerState({ path: pathname, open });
   const [pairs, setPairs] = useState<number[][]>(
@@ -261,7 +287,7 @@ export default function Workstation() {
       setLoading(true);
       setCloud(null);
       setSeams([]);
-      setSelected(null);
+      setSelectedId(null);
       setProgram(null);
       setTransfer(null);
       setProgramSeam(null);
@@ -274,11 +300,7 @@ export default function Workstation() {
         cache.current.has(id)
           ? Promise.resolve(cache.current.get(id)!)
           : requestApi("/view/" + encoded).then(async (r) => {
-              if (!r.ok)
-                throw new ApiError(
-                  r.status,
-                  "暂无识别结果，请先识别或复用历史结果",
-                );
+              await requireOk(r);
               const value = parseCloud(await r.arrayBuffer());
               cache.current.set(id, value);
               return value;
@@ -293,7 +315,7 @@ export default function Workstation() {
         fail(view.reason);
       if (list.status === "fulfilled") {
         setSeams(list.value.seams);
-        setSelected(list.value.seams[0]?.id ?? null);
+        setSelectedId(list.value.seams[0]?.id ?? null);
       } else if (!(
         list.reason instanceof ApiError && list.reason.status === 404
       ))
@@ -599,6 +621,32 @@ export default function Workstation() {
       setPending(null);
     }
   }
+  async function downloadProgram(currentProgram: Program) {
+    try {
+      const name = currentProgram.ls_name.replace(/\.ls$/i, "");
+      const blob = demo
+        ? new Blob([currentProgram.ls_text], {
+            type: "text/plain;charset=utf-8",
+          })
+        : await (
+            await requireOk(
+              await requestApi(
+                "/program/" + encodeURIComponent(name) + "/download",
+              ),
+            )
+          ).blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = demo ? "DEMO_ONLY.demo.txt" : name + ".ls";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      fail(error);
+    }
+  }
   async function push() {
     if (!program || programSeam !== selected)
       return notify("请先为当前焊缝生成程序");
@@ -609,7 +657,13 @@ export default function Workstation() {
         remote_path: string;
         existed_before: boolean;
       }>("/push", { frame: fid, seam_id: selected, ...ftp });
-      setTransfer(result);
+      setTransfer({
+        ...result,
+        frame: fid,
+        seam: selected,
+        minLength: recognition.min_len,
+        program,
+      });
       const { password: _, ...safe } = ftp;
       void _;
       if (!demo) localStorage.setItem("weld-ftp", JSON.stringify(safe));
@@ -624,7 +678,6 @@ export default function Workstation() {
     }
   }
   const selectedSeam = seams.find((s) => s.id === selected),
-    visibleSeams = seams.filter((s) => s.length_mm >= recognition.min_len),
     hasProgram = program && programSeam === selected;
   const points = hasProgram ? program.waypoints_cam_mm : [],
     total = arcLengths(points).at(-1) ?? 0,
@@ -654,7 +707,7 @@ export default function Workstation() {
         if (!["ArrowUp", "ArrowDown"].includes(e.key)) return;
         e.preventDefault();
         const index = visibleSeams.findIndex((s) => s.id === selected);
-        setSelected(
+        selectSeam(
           visibleSeams[
             Math.max(
               0,
@@ -677,7 +730,7 @@ export default function Workstation() {
             <button
               className="seam-title"
               onClick={() => {
-                setSelected(s.id);
+                selectSeam(s.id);
                 setPlaying(false);
               }}
             >
@@ -697,7 +750,7 @@ export default function Workstation() {
                 <button
                   key={action}
                   onClick={() => {
-                    setSelected(s.id);
+                    selectSeam(s.id);
                     setPlaying(false);
                     if (i === 1) {
                       setTab(3);
@@ -1258,19 +1311,8 @@ export default function Workstation() {
                         }
                         download={demo ? "DEMO_ONLY.demo.txt" : undefined}
                         onClick={(e) => {
-                          if (demo) {
-                            e.preventDefault();
-                            const url = URL.createObjectURL(
-                              new Blob([program.ls_text], {
-                                type: "text/plain;charset=utf-8",
-                              }),
-                            );
-                            const link = document.createElement("a");
-                            link.href = url;
-                            link.download = "DEMO_ONLY.demo.txt";
-                            link.click();
-                            setTimeout(() => URL.revokeObjectURL(url), 1000);
-                          }
+                          e.preventDefault();
+                          void downloadProgram(program);
                         }}
                       >
                         <Download size={15} />
@@ -1423,7 +1465,7 @@ export default function Workstation() {
           </div>
           <CloudView
             cloud={cloud}
-            seams={seams}
+            seams={visibleSeams}
             selected={selected}
             mode={mode}
             size={size}

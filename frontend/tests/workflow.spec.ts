@@ -119,6 +119,7 @@ test("frame, recognition, calibration, program safety and FTP workflow", async (
     page.getByRole("heading", { name: "AI焊缝识别", exact: true }),
   ).toBeVisible();
   await expect(page.locator(".view-status")).toContainText("sw2_e30");
+  await page.getByRole("checkbox", { name: /复用历史结果/ }).check();
   await page.getByRole("button", { name: "开始识别" }).click();
   await page.getByRole("button", { name: /任务中心/ }).click();
   await expect(page.locator(".task-history")).toContainText("复用历史产物完成");

@@ -113,6 +113,21 @@ export class ApiError extends Error {
     super(message);
   }
 }
+export async function requireOk(response: Response): Promise<Response> {
+  if (!response.ok) {
+    const data = await response.json().catch(() => null);
+    const detail = data?.detail;
+    throw new ApiError(
+      response.status,
+      typeof detail === "string"
+        ? detail
+        : detail != null
+          ? JSON.stringify(detail)
+          : `后端服务不可用（HTTP ${response.status}）`,
+    );
+  }
+  return response;
+}
 export async function api<T>(
   path: string,
   body?: unknown,
@@ -135,17 +150,7 @@ export async function api<T>(
           ? body
           : JSON.stringify(body),
   });
-  if (!response.ok) {
-    const data = await response
-      .json()
-      .catch(() => ({ detail: "后端服务不可用" }));
-    throw new ApiError(
-      response.status,
-      typeof data.detail === "string"
-        ? data.detail
-        : JSON.stringify(data.detail),
-    );
-  }
+  await requireOk(response);
   return response.json();
 }
 export type Frame = {
