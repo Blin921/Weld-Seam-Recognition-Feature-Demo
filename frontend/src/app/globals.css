@@ -2473,3 +2473,188 @@ details,
   background: #213e62;
   color: #c3dcff;
 }
+/* Home distributes its content across the available height instead of clustering at the top. */
+@media (min-width: 1200px) {
+  .design-home {
+    height: 100dvh;
+    min-height: 720px;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 20px;
+  }
+  .design-home > .site-header {
+    height: 64px;
+    min-height: 64px;
+    flex-shrink: 0;
+  }
+  .design-home .home-hero {
+    flex: 1;
+    min-height: 270px;
+    margin: 12px 56px 24px;
+    grid-template-columns: 0.9fr 1.1fr;
+    gap: 48px;
+    align-items: stretch;
+  }
+  .design-home .home-copy {
+    padding: 0 8px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-start;
+    min-width: 0;
+  }
+  .design-home .home-copy h1 {
+    font-size: clamp(30px, 2.6vw, 46px);
+    line-height: 1.35;
+    margin: 14px 0 18px;
+  }
+  .design-home .home-copy h2 {
+    font-size: 18px;
+    margin-bottom: 12px;
+    line-height: 1.5;
+  }
+  .design-home .home-copy p {
+    line-height: 1.8;
+    margin: 0 0 16px;
+  }
+  .design-home .home-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .design-home .home-actions .home-cta,
+  .design-home .home-actions .demo-entry {
+    margin: 0;
+    padding: 12px 22px;
+    min-height: 44px;
+  }
+  .design-home .home-copy .demo-entry-help {
+    margin: 10px 0 0;
+    color: var(--muted, #61758e);
+  }
+  .design-home .hero-cloud {
+    height: auto;
+    min-height: 270px;
+    max-height: none;
+    align-self: stretch;
+  }
+  .design-home .feature-section {
+    flex-shrink: 0;
+    margin: 0 56px;
+  }
+  .design-home .feature-section > h2 {
+    font-size: 24px;
+    margin: 0 0 16px;
+  }
+  .design-home .feature-grid {
+    gap: 20px;
+  }
+  .design-home .feature-card {
+    padding: 20px;
+    min-height: 220px;
+  }
+  .design-home .feature-card > svg {
+    margin: 16px 0;
+  }
+  .design-home .feature-card h3 {
+    font-size: 18px;
+    margin-bottom: 10px;
+  }
+  .design-home .feature-card p {
+    line-height: 1.6;
+    margin-bottom: 14px;
+  }
+  .design-home .home-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    flex-shrink: 0;
+    margin: 18px 56px 0;
+    padding-top: 12px;
+    border-top: 1px solid #e1e8f0;
+    font-size: 14px;
+  }
+  .design-home .home-disclaimer {
+    margin: 0;
+    line-height: 1.6;
+    max-width: 950px;
+  }
+  .design-home .architecture {
+    position: relative;
+    flex-shrink: 0;
+    margin: 0;
+  }
+  .design-home .architecture summary {
+    padding: 4px 0;
+    white-space: nowrap;
+  }
+  .design-home .architecture > p {
+    position: absolute;
+    right: 0;
+    bottom: 28px;
+    width: min(520px, 80vw);
+    margin: 0;
+    padding: 18px;
+    background: white;
+    border: 1px solid #dce5ef;
+    border-radius: 10px;
+    box-shadow: 0 8px 30px #1b304a18;
+    z-index: 10;
+    line-height: 1.8;
+  }
+}
+@media (min-width: 1200px) and (max-height: 820px) {
+  .design-home > .site-header {
+    height: 56px;
+    min-height: 56px;
+  }
+  .design-home {
+    padding-bottom: 14px;
+  }
+  .design-home .home-hero {
+    margin-top: 8px;
+    margin-bottom: 18px;
+    min-height: 260px;
+    gap: 32px;
+  }
+  .design-home .hero-cloud {
+    min-height: 260px;
+  }
+  .design-home .home-copy h1 {
+    font-size: 30px;
+    margin: 10px 0 12px;
+  }
+  .design-home .home-copy h2 {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .design-home .home-copy p {
+    margin-bottom: 10px;
+    line-height: 1.6;
+  }
+  .design-home .home-actions .home-cta,
+  .design-home .home-actions .demo-entry {
+    padding: 10px 18px;
+    min-height: 40px;
+  }
+  .design-home .feature-section > h2 {
+    font-size: 22px;
+    margin-bottom: 12px;
+  }
+  .design-home .feature-card {
+    min-height: 210px;
+    padding: 18px;
+  }
+  .design-home .feature-card > svg {
+    margin: 12px 0;
+  }
+  .design-home .feature-card h3 {
+    font-size: 16px;
+  }
+  .design-home .home-footer {
+    margin-top: 14px;
+    padding-top: 10px;
+  }
+}

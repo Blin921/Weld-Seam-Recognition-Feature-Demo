@@ -64,10 +64,12 @@ export default function Home() {
             <br />
             坐标标定与机器人程序生成的完整流程。
           </p>
-          <Link className="home-cta" href="#features">
-            探索系统功能 ↗
-          </Link>
-          <DemoEntry />
+          <div className="home-actions">
+            <Link className="home-cta" href="#features">
+              探索系统功能 ↗
+            </Link>
+            <DemoEntry />
+          </div>
           <p className="demo-entry-help">
             无需后端 · 合成点云与轨迹 · 不连接机器人
           </p>
@@ -90,17 +92,19 @@ export default function Home() {
           ))}
         </div>
       </section>
-      <p className="home-disclaimer" id="about">
-        WELD VISION ·
-        首页点云为示意图；演示模式使用合成数据，真实模式以后端响应为准。系统不启动机器人。
-      </p>
-      <details id="architecture" className="architecture">
-        <summary>技术架构与部署说明</summary>
-        <p>
-          浏览器 → Next.js（3000）→ 同源 /api 代理 → FastAPI（8000）→ 相机 / C++
-          解算器 / 控制器。可复用历史产物完成离线演示。
+      <footer className="home-footer">
+        <p className="home-disclaimer" id="about">
+          WELD VISION ·
+          首页点云为示意图；演示模式使用合成数据，真实模式以后端响应为准。系统不启动机器人。
         </p>
-      </details>
+        <details id="architecture" className="architecture">
+          <summary>技术架构与部署说明</summary>
+          <p>
+            浏览器 → Next.js（3000）→ 同源 /api 代理 → FastAPI（8000）→ 相机 /
+            C++ 解算器 / 控制器。可复用历史产物完成离线演示。
+          </p>
+        </details>
+      </footer>
     </main>
   );
 }
