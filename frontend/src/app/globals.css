@@ -3421,3 +3421,11 @@ details,
     display: none;
   }
 }
+/* Keep transient messages and expanded logs above the numbered navigation. */
+.workstation > .toast {
+  bottom: 60px;
+  max-width: min(700px, calc(100vw - 40px));
+}
+.workstation > .task-drawer.open {
+  bottom: 60px;
+}

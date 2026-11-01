@@ -60,6 +60,9 @@ test("single HTML opens from disk offline and runs the complete visual demonstra
   await expect(page.locator(".program-code")).toContainText(
     "NOT AN EXECUTABLE",
   );
+  const notice = await page.getByRole("status").boundingBox();
+  const navigation = await page.locator(".steps").boundingBox();
+  expect(notice!.y + notice!.height).toBeLessThanOrEqual(navigation!.y);
   await page.getByLabel("播放", { exact: true }).click();
   await page.getByLabel("暂停", { exact: true }).click();
   const pending = page.waitForEvent("download");
