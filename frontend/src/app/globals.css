@@ -2054,3 +2054,56 @@ details,
 .hero-cloud > span small {
   font-size: 14px;
 }
+.demo-entry {
+  display: block;
+  margin-top: 12px;
+  background: #008d81;
+  color: white;
+  border-radius: 10px;
+  padding: 13px 26px;
+  font-weight: 600;
+  font-size: 14px;
+}
+.home-copy .demo-entry-help {
+  margin-top: 9px;
+  font-size: 14px;
+}
+.demo-banner {
+  margin: 0 56px 16px;
+  display: flex;
+  gap: 20px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 14px 18px;
+  background: #e3f4ef;
+  border: 1px solid #b2dcd1;
+  border-radius: 12px;
+  color: #006f64;
+  font-size: 14px;
+}
+.demo-banner p {
+  margin: 6px 0 0;
+  line-height: 1.7;
+}
+.demo-banner button {
+  flex-shrink: 0;
+  border: 1px solid #7fbfaf;
+  border-radius: 7px;
+  padding: 10px;
+  background: var(--surface);
+}
+.dark .demo-banner {
+  background: #153d37;
+  color: #a1e0d2;
+  border-color: #2b6158;
+}
+.source-demo {
+  color: #007b71;
+  background: #dff2ec;
+}
+@media (max-width: 1399px) {
+  .demo-banner {
+    margin-left: 28px;
+    margin-right: 28px;
+  }
+}

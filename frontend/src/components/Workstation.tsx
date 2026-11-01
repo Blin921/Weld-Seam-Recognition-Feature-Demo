@@ -3,6 +3,9 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import SiteHeader from "./SiteHeader";
+import { requestApi } from "@/lib/transport";
+import { useDemoMode } from "@/lib/useDemoMode";
+import { setDemoMode, isDemoMode } from "@/lib/demo";
 import { useCompactLayout } from "@/lib/useCompactLayout";
 import { mergeCalibration } from "@/lib/calibration";
 import { samplePath } from "@/lib/core";
@@ -136,6 +139,7 @@ export default function Workstation() {
   ];
   const tab = Math.max(0, routes.indexOf(pathname));
   const acquisition = pathname === "/scan";
+  const demo = useDemoMode();
   const compact = useCompactLayout();
   const [panelChoice, setPanelChoice] = useState({
     path: pathname,
@@ -258,7 +262,7 @@ export default function Workstation() {
       const results = await Promise.allSettled([
         cache.current.has(id)
           ? Promise.resolve(cache.current.get(id)!)
-          : fetch("/api/view/" + encoded).then(async (r) => {
+          : requestApi("/view/" + encoded).then(async (r) => {
               if (!r.ok)
                 throw new ApiError(
                   r.status,
@@ -307,7 +311,7 @@ export default function Workstation() {
           if (list.length) setFid(list[0].id);
         })
         .catch(fail);
-      const saved = localStorage.getItem("weld-ftp");
+      const saved = isDemoMode() ? null : localStorage.getItem("weld-ftp");
       if (saved)
         try {
           const data = JSON.parse(saved);
@@ -554,7 +558,11 @@ export default function Workstation() {
       setTransfer(null);
       setProgramSeam(selected);
       setSeconds(0);
-      notify("程序已生成，仅供预演、下载与文件下发");
+      notify(
+        demo
+          ? "演示程序已生成，仅供预演与文本下载，不可上机"
+          : "程序已生成，仅供预演、下载与文件下发",
+      );
     } catch (e) {
       if (
         e instanceof ApiError &&
@@ -581,9 +589,9 @@ export default function Workstation() {
       setTransfer(result);
       const { password: _, ...safe } = ftp;
       void _;
-      localStorage.setItem("weld-ftp", JSON.stringify(safe));
+      if (!demo) localStorage.setItem("weld-ftp", JSON.stringify(safe));
       notify(
-        `已下发 ${result.bytes} 字节 → ${result.remote_path}${result.existed_before ? "；已覆盖控制器同名程序" : ""}`,
+        `${demo ? "模拟完成，未发送文件" : "已下发"} ${result.bytes} 字节 → ${result.remote_path}${result.existed_before ? "；已覆盖控制器同名程序" : ""}`,
       );
     } catch (e) {
       fail(e);
@@ -733,7 +741,11 @@ export default function Workstation() {
         <>
           <h3>标定结果</h3>
           <h2 className="teal-heading">
-            {calib.uncalibrated ? "尚未标定" : "✓ 标定已保存"}
+            {calib.uncalibrated
+              ? "尚未标定"
+              : demo
+                ? "✓ 模拟标定已保存"
+                : "✓ 标定已保存"}
           </h2>
           <p>标定标签 {calib.calib_tag}</p>
           <p>最大残差 {calib.max_dev_mm ?? "—"} mm</p>
@@ -746,7 +758,9 @@ export default function Workstation() {
           <p>点对数量 {pairs.length}</p>
           <p>T camera → robot</p>
           <div className="help">
-            矩阵由后端保存。此处仅显示已确认返回的数据。
+            {demo
+              ? "此处是固定的示例残差，不代表实际标定求解结果。"
+              : "矩阵由后端保存。此处仅显示已确认返回的数据。"}
           </div>
         </>
       ) : tab === 3 ? (
@@ -787,7 +801,9 @@ export default function Workstation() {
           <h3>传输结果</h3>
           {transfer ? (
             <>
-              <h2 className="teal-heading">✓ 文件传输成功</h2>
+              <h2 className="teal-heading">
+                {demo ? "✓ 模拟完成，未发送文件" : "✓ 文件传输成功"}
+              </h2>
               <p>远端路径 {transfer.remote_path}</p>
               <p>字节数 {transfer.bytes}</p>
               {transfer.existed_before && (
@@ -860,6 +876,25 @@ export default function Workstation() {
   return (
     <main className={dark ? "workstation dark" : "workstation"}>
       <SiteHeader />
+      {demo && (
+        <section className="demo-banner">
+          <div>
+            <strong>演示模式 · 合成示例数据</strong>
+            <p>
+              无需后端，可体验识别、标定展示与轨迹预演。无真实推理、无真实标定；模拟下发不会连接设备。
+            </p>
+          </div>
+          <button
+            disabled={!!active || busy}
+            onClick={() => {
+              setDemoMode(false);
+              router.push("/recognize");
+            }}
+          >
+            退出演示，连接后端
+          </button>
+        </section>
+      )}
       <div className="page-heading">
         <Link href="/">← 返回首页 / 功能中心</Link>
         <h1>{pageTitle}</h1>
@@ -872,14 +907,16 @@ export default function Workstation() {
             className={health?.model_ok ? "ok" : "warn"}
           >
             <i />
-            模型{health?.model_ok ? "就绪" : "未就绪"}
+            {demo
+              ? "模拟模型（未加载）"
+              : `模型${health?.model_ok ? "就绪" : "未就绪"}`}
           </span>
           <span
             title="缺失时请编译后端 C++ 解算器"
             className={health?.cpp_ok ? "ok" : "warn"}
           >
             <i />
-            C++ 解算器
+            {demo ? "模拟解算（无 C++）" : "C++ 解算器"}
           </span>
           <span
             title={
@@ -898,7 +935,13 @@ export default function Workstation() {
             }
           >
             <i />
-            {calib.uncalibrated ? "未标定" : "已标定"}
+            {demo
+              ? calib.uncalibrated
+                ? "演示未标定"
+                : "模拟标定"
+              : calib.uncalibrated
+                ? "未标定"
+                : "已标定"}
           </span>
         </div>
         <button
@@ -976,12 +1019,16 @@ export default function Workstation() {
                 </h3>
                 <label className="upload">
                   <CloudUpload size={24} />
-                  <strong>上传点云文件</strong>
-                  <small>PCD 格式 · 最大 300 MB</small>
+                  <strong>{demo ? "演示使用内置点云" : "上传点云文件"}</strong>
+                  <small>
+                    {demo
+                      ? "演示使用预置数据，退出演示后可上传真实文件"
+                      : "PCD 格式 · 最大 300 MB"}
+                  </small>
                   <input
                     type="file"
                     accept=".pcd"
-                    disabled={busy || !!active}
+                    disabled={demo || busy || !!active}
                     onChange={(e) => void upload(e.target.files?.[0])}
                   />
                 </label>
@@ -1024,7 +1071,8 @@ export default function Workstation() {
                   </h3>
                   <label className="toggle-row">
                     <div>
-                      复用历史结果<small>离线演示 · 无需加载模型</small>
+                      {demo ? "复用示例轨迹" : "复用历史结果"}
+                      <small>离线演示 · 无需加载模型</small>
                     </div>
                     <input
                       type="checkbox"
@@ -1082,7 +1130,7 @@ export default function Workstation() {
                     }
                     onClick={() => void task("scan")}
                   >
-                    采集点云
+                    {demo ? "模拟采集点云" : "采集点云"}
                   </button>
                 </details>
               </>
@@ -1090,6 +1138,24 @@ export default function Workstation() {
             {tab === 1 && (
               <>
                 <h3>相机 → 基座坐标</h3>
+                {demo && (
+                  <div className="info-box">
+                    仅演示交互，不执行实际标定。
+                    <button
+                      className="secondary full"
+                      onClick={() => {
+                        setCalibMode(false);
+                        setPairs([
+                          [0, 0, 500, 320, 125, 480],
+                          [100, 0, 500, 420, 125, 480],
+                          [0, 100, 500, 320, 225, 480],
+                        ]);
+                      }}
+                    >
+                      填入示例点对
+                    </button>
+                  </div>
+                )}
                 <p className="help">
                   每帧独立标定。至少提供 3 组非共线点对，所有坐标单位为毫米。
                 </p>
@@ -1230,7 +1296,7 @@ export default function Workstation() {
                   onClick={() => void generate()}
                 >
                   <FileCode2 size={16} />
-                  生成 .LS 程序
+                  {demo ? "生成演示程序" : "生成 .LS 程序"}
                 </button>
                 {hasProgram && (
                   <>
@@ -1263,7 +1329,22 @@ export default function Workstation() {
                           ) +
                           "/download"
                         }
-                        download
+                        download={demo ? "DEMO_ONLY.demo.txt" : undefined}
+                        onClick={(e) => {
+                          if (demo) {
+                            e.preventDefault();
+                            const url = URL.createObjectURL(
+                              new Blob([program.ls_text], {
+                                type: "text/plain;charset=utf-8",
+                              }),
+                            );
+                            const link = document.createElement("a");
+                            link.href = url;
+                            link.download = "DEMO_ONLY.demo.txt";
+                            link.click();
+                            setTimeout(() => URL.revokeObjectURL(url), 1000);
+                          }
+                        }}
                       >
                         <Download size={15} />
                         下载
@@ -1305,7 +1386,7 @@ export default function Workstation() {
                 </div>
                 <button
                   className="primary full"
-                  disabled={busy || !ftp.host}
+                  disabled={busy || (!demo && !ftp.host)}
                   onClick={() =>
                     hasProgram
                       ? setPending("push")
@@ -1313,7 +1394,7 @@ export default function Workstation() {
                   }
                 >
                   <Send size={16} />
-                  确认下发文件
+                  {demo ? "模拟下发（不连接设备）" : "确认下发文件"}
                 </button>
                 <div className="warning">
                   同名程序将被覆盖。T1 倍率不高于 10%、单段模式、手不离急停。
@@ -1354,7 +1435,11 @@ export default function Workstation() {
                 </p>
               </div>
               <h2 className="teal-heading">
-                {transfer ? "文件传输完成" : "等待文件传输"}
+                {transfer
+                  ? demo
+                    ? "模拟完成，未发送文件"
+                    : "文件传输完成"
+                  : "等待文件传输"}
               </h2>
               <div
                 className={"transfer-progress " + (transfer ? "complete" : "")}
@@ -1663,14 +1748,18 @@ export default function Workstation() {
                 ? "未标定程序警告"
                 : pending === "clear"
                   ? "清除当前帧标定？"
-                  : "确认下发程序文件"}
+                  : demo
+                    ? "确认模拟下发（不连接设备）"
+                    : "确认下发程序文件"}
             </h2>
             <p>
               {pending === "uncalibrated"
                 ? "坐标仍是相机系，禁止上机。该程序仅可用于离线检查。确认继续生成？"
                 : pending === "clear"
                   ? "清除后程序将使用相机系坐标，需要重新标定。"
-                  : `目标：${ftp.host}:${ftp.port}\n目录：${ftp.remote_dir}\n程序：${program?.ls_name}\n同名程序将被覆盖。本操作只传输文件，不启动机器人。`}
+                  : demo
+                    ? "仅模拟界面流程，不会连接任何设备，也不会发送文件。演示程序不是可执行机器人程序。"
+                    : `目标：${ftp.host}:${ftp.port}\n目录：${ftp.remote_dir}\n程序：${program?.ls_name}\n同名程序将被覆盖。本操作只传输文件，不启动机器人。`}
             </p>
             <div>
               <button

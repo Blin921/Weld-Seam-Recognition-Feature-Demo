@@ -6,6 +6,7 @@ import {
   Workflow,
   Upload,
 } from "lucide-react";
+import DemoEntry from "@/components/DemoEntry";
 import SiteHeader from "@/components/SiteHeader";
 import PointCloudIllustration from "@/components/PointCloudIllustration";
 const features = [
@@ -66,6 +67,10 @@ export default function Home() {
           <Link className="home-cta" href="#features">
             探索系统功能 ↗
           </Link>
+          <DemoEntry />
+          <p className="demo-entry-help">
+            无需后端 · 合成点云与轨迹 · 不连接机器人
+          </p>
         </div>
         <PointCloudIllustration />
       </section>
@@ -87,7 +92,7 @@ export default function Home() {
       </section>
       <p className="home-disclaimer" id="about">
         WELD VISION ·
-        首页点云为示意图；功能页状态以实际后端响应为准。系统仅生成与传输文件，不启动机器人。
+        首页点云为示意图；演示模式使用合成数据，真实模式以后端响应为准。系统不启动机器人。
       </p>
       <details id="architecture" className="architecture">
         <summary>技术架构与部署说明</summary>

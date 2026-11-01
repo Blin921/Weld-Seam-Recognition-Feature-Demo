@@ -1,3 +1,4 @@
+import { requestApi } from "./transport";
 export type Vec = [number, number, number];
 export type Header = {
   version: number;
@@ -118,7 +119,7 @@ export async function api<T>(
   method?: string,
   signal?: AbortSignal,
 ): Promise<T> {
-  const response = await fetch("/api" + path, {
+  const response = await requestApi(path, {
     signal,
     method: method ?? (body === undefined ? "GET" : "POST"),
     headers:
