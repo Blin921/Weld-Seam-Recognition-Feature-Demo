@@ -55,7 +55,7 @@ test("offline demo runs the visual workflow without API or controller requests",
   await page.getByRole("button", { name: "体验演示数据 →" }).click();
   await page
     .locator(".steps")
-    .getByRole("button", { name: "FTP 下发", exact: true })
+    .getByRole("button", { name: "程序下发", exact: true })
     .click();
   await page.getByRole("button", { name: "模拟下发（不连接设备）" }).click();
   await expect(page.getByRole("dialog")).toContainText("不会连接任何设备");

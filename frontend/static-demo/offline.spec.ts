@@ -70,7 +70,7 @@ test("single HTML opens from disk offline and runs the complete visual demonstra
   await page.screenshot({ path: "test-results/offline-preview.png" });
   await page
     .locator(".steps")
-    .getByRole("button", { name: "FTP 下发", exact: true })
+    .getByRole("button", { name: "程序下发", exact: true })
     .click();
   await page.getByRole("button", { name: "模拟下发（不连接设备）" }).click();
   await page.getByRole("button", { name: "确认继续" }).click();
@@ -109,6 +109,15 @@ test("all function routes open and refresh directly from the same offline file",
     await expect(page.locator(".demo-banner")).toBeVisible();
     await expect(page.locator(".view-status")).toContainText("DEMO_PIPE_A");
     await expect(page.locator(".workstation h1")).toBeVisible();
+    await expect(page.locator(".steps")).toHaveCount(1);
+    await expect(page.locator(".steps > a, .steps > button")).toHaveCount(6);
+    await expect(page.locator('.steps [aria-current="page"]')).toHaveCount(1);
+    await expect(page.locator(".function-purpose")).toBeVisible();
+    expect(
+      await page
+        .locator(".workstation h1")
+        .evaluate((heading) => parseFloat(getComputedStyle(heading).fontSize)),
+    ).toBeGreaterThanOrEqual(28);
     await page.reload();
     await expect(page.locator(".demo-banner")).toBeVisible();
     await expect(page.locator(".view-status")).toContainText("DEMO_PIPE_A");

@@ -23,6 +23,7 @@ import {
   Radio,
   RotateCcw,
   ScanLine,
+  ScanSearch,
   Send,
   Settings2,
   ShieldCheck,
@@ -167,6 +168,19 @@ export default function Workstation() {
         "焊缝管理",
         "程序生成与轨迹预演",
         "机器人程序下发",
+      ][tab];
+  const pageNumber = acquisition ? 1 : tab + 2;
+  const PageIcon = acquisition
+    ? ScanLine
+    : [ScanSearch, Crosshair, Layers, Workflow, Send][tab];
+  const pagePurpose = acquisition
+    ? "管理点云帧 · 采集工件数据"
+    : [
+        "识别工件 · 定位焊缝 · 查看三维结果",
+        "建立坐标转换 · 查看标定结果",
+        "筛选焊缝 · 查看轨迹 · 选择目标",
+        "生成程序 · 预演轨迹 · 查看运动进度",
+        "确认程序 · 传输文件 · 查看下发结果",
       ][tab];
   const [frames, setFrames] = useState<Frame[]>([]),
     [fid, setFid] = useState(""),
@@ -693,11 +707,11 @@ export default function Workstation() {
   ];
   const stateLabels = { idle: "未就绪", running: "进行中", ready: "就绪" };
   const stepNames = [
-    "帧与识别",
+    "AI焊缝识别",
     "坐标标定",
     "焊缝管理",
     "程序与预演",
-    "FTP 下发",
+    "程序下发",
   ];
   const seamList = (
     <div
@@ -941,13 +955,30 @@ export default function Workstation() {
           ◈ WELD VISION
         </Link>
         <span className="topbar-divider" aria-hidden="true" />
-        <h1>{pageTitle}</h1>
-        {demo && (
-          <div className="demo-banner">
-            <strong>演示模式 · 合成示例数据</strong>
+        <div className="workspace-function">
+          <div className="function-icon" aria-hidden="true">
+            <PageIcon size={28} strokeWidth={1.8} />
           </div>
-        )}
+          <div className="function-heading">
+            <div className="function-title-line">
+              <h1>{pageTitle}</h1>
+              <span
+                className="function-number"
+                aria-label={`第 ${pageNumber} 个功能`}
+              >
+                {String(pageNumber).padStart(2, "0")}
+              </span>
+            </div>
+            <p className="function-purpose">{pagePurpose}</p>
+          </div>
+        </div>
         <div className="workspace-actions">
+          {demo && (
+            <div className="demo-banner">
+              <strong>演示模式</strong>
+              <span className="demo-badge-detail"> · 合成示例数据</span>
+            </div>
+          )}
           {demo && (
             <details className="workspace-help">
               <summary>演示说明</summary>
@@ -1044,7 +1075,7 @@ export default function Workstation() {
               : ["识别任务", "标定控制", "焊缝管理", "程序参数", "控制器连接"][
                   tab
                 ]}
-            <span>STEP 0{tab + 1}</span>
+            <span>STEP {String(pageNumber).padStart(2, "0")}</span>
           </div>
           {compact && (
             <div
@@ -1430,7 +1461,7 @@ export default function Workstation() {
                 {acquisition
                   ? "点云预览"
                   : [
-                      "3D 识别结果",
+                      "三维识别结果",
                       "坐标系与点对关系",
                       "3D 焊缝视图",
                       "轨迹预演 / 程序代码",
@@ -1655,30 +1686,17 @@ export default function Workstation() {
           </div>
         )}
       </section>
-      <div className="workflow-pager">
-        <Link
-          href={
-            acquisition
-              ? "/"
-              : tab === 0
-                ? "/scan"
-                : routes[Math.max(0, tab - 1)]
-          }
-        >
-          ←{" "}
-          {acquisition
-            ? "返回首页"
-            : tab === 0
-              ? "数据采集与管理"
-              : stepNames[Math.max(0, tab - 1)]}
-        </Link>
-        <Link href={acquisition ? "/recognize" : routes[Math.min(4, tab + 1)]}>
-          {acquisition ? "AI焊缝识别" : stepNames[Math.min(4, tab + 1)]} →
-        </Link>
-      </div>
       <nav className="steps" aria-label="工作流导航">
-        <Link className={acquisition ? "active" : ""} href="/scan">
-          数据采集与管理
+        <Link
+          className={acquisition ? "active" : ""}
+          href="/scan"
+          aria-label="数据采集与管理"
+          aria-current={acquisition ? "page" : undefined}
+        >
+          <span className="workflow-number" aria-hidden="true">
+            01
+          </span>
+          数据采集
         </Link>
         {stepNames.map((name, i) => (
           <button
@@ -1686,30 +1704,20 @@ export default function Workstation() {
             className={!acquisition && tab === i ? "active" : ""}
             onClick={() => setTab(i)}
             aria-label={name}
+            aria-current={!acquisition && tab === i ? "page" : undefined}
             aria-describedby={"workflow-step-state-" + i}
           >
-            <i className={"step-state " + stepStates[i]} aria-hidden="true" />
+            <span className="workflow-number" aria-hidden="true">
+              {String(i + 2).padStart(2, "0")}
+            </span>
             {name}
             <span id={"workflow-step-state-" + i} className="sr-only">
               {stateLabels[stepStates[i] as keyof typeof stateLabels]}
               {i >= 3 && calib.uncalibrated ? "；未标定，禁止上机" : ""}
             </span>
-            {i >= 3 && calib.uncalibrated && (
-              <span className="step-warning" title="当前帧未标定，禁止上机">
-                !
-              </span>
-            )}
           </button>
         ))}
       </nav>
-      <footer>
-        <span>
-          <i />
-          WELD VISION 工作站
-        </span>
-        <span>相机系 (x, −y, z) · mm</span>
-        <span>Next.js / FastAPI</span>
-      </footer>
       {toast && (
         <div role="status" className="toast">
           {toast}

@@ -176,7 +176,7 @@ test("frame, recognition, calibration, program safety and FTP workflow", async (
   await expect(page.locator(".program-code")).toContainText("/PROG WELD01");
   await page
     .locator(".steps")
-    .getByRole("button", { name: /FTP 下发/ })
+    .getByRole("button", { name: /程序下发/ })
     .click();
   await page
     .getByText("控制器地址", { exact: true })

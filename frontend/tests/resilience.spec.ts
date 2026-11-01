@@ -95,7 +95,7 @@ test("frame metadata, readable fields, compact context tabs, and preserved resid
   expect(state.calibWrites).toBe(1);
   await page
     .locator(".steps")
-    .getByRole("button", { name: "帧与识别", exact: true })
+    .getByRole("button", { name: "AI焊缝识别", exact: true })
     .click();
   await page
     .locator(".frame-list button")
@@ -134,7 +134,7 @@ test("frame metadata, readable fields, compact context tabs, and preserved resid
   };
   await page
     .locator(".steps")
-    .getByRole("button", { name: "帧与识别", exact: true })
+    .getByRole("button", { name: "AI焊缝识别", exact: true })
     .click();
   await page
     .locator(".frame-list button")
@@ -203,7 +203,7 @@ test("3D controls and paused theme changes preserve the renderer and compact TCP
   });
   await page
     .locator(".steps")
-    .getByRole("button", { name: "FTP 下发", exact: true })
+    .getByRole("button", { name: "程序下发", exact: true })
     .click();
   await page
     .getByText("控制器地址", { exact: true })

@@ -84,7 +84,7 @@ test("R04 transfer success must belong to the currently selected seam", async ({
   await generated(page);
   await page
     .locator(".steps")
-    .getByRole("button", { name: "FTP 下发", exact: true })
+    .getByRole("button", { name: "程序下发", exact: true })
     .click();
   await page
     .getByText("控制器地址", { exact: true })
@@ -100,7 +100,7 @@ test("R04 transfer success must belong to the currently selected seam", async ({
   await page.locator(".control-panel .seam-title").last().click();
   await page
     .locator(".steps")
-    .getByRole("button", { name: "FTP 下发", exact: true })
+    .getByRole("button", { name: "程序下发", exact: true })
     .click();
   await expect(page.locator(".transfer-main")).toContainText("等待文件传输");
 });

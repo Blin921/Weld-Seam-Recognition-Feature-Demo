@@ -39,11 +39,11 @@ test("dark palette covers all workflow surfaces and theme icon stays visible", a
   await expect(toggle).toHaveAttribute("aria-pressed", "true");
   await expect(toggle).toHaveAttribute("title", "切换为浅色模式");
   for (const destination of [
-    "帧与识别",
+    "AI焊缝识别",
     "坐标标定",
     "焊缝管理",
     "程序与预演",
-    "FTP 下发",
+    "程序下发",
   ]) {
     await page
       .locator(".steps")
@@ -85,7 +85,7 @@ test("dark palette covers all workflow surfaces and theme icon stays visible", a
   }
   await page
     .locator(".steps")
-    .getByRole("button", { name: "帧与识别", exact: true })
+    .getByRole("button", { name: "AI焊缝识别", exact: true })
     .click();
   await page.getByRole("button", { name: /任务中心/ }).click();
   await page.screenshot({

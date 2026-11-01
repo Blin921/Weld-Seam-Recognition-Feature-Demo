@@ -3240,3 +3240,184 @@ details,
 .workstation.dark .program-code {
   border: 1px solid var(--line);
 }
+
+/* Page identity and the single numbered workflow navigation match the presentation mockup. */
+.workspace-topbar {
+  height: 64px;
+  min-height: 64px;
+  gap: 14px;
+}
+.topbar-divider {
+  height: 30px;
+  flex-shrink: 0;
+}
+.workspace-function {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1;
+}
+.function-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  color: #fff;
+  background: #285cff;
+}
+.function-heading {
+  min-width: 0;
+}
+.function-title-line {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.workstation .workspace-topbar h1 {
+  font-size: 28px;
+  line-height: 1.2;
+  letter-spacing: -0.5px;
+}
+.function-number {
+  padding: 3px 8px;
+  border-radius: 6px;
+  color: #2459e7;
+  background: #e2ecff;
+  font: 600 18px/1.2 var(--numeric-font);
+}
+.function-purpose {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.workstation > .status-strip {
+  min-height: 28px;
+  margin-bottom: 2px;
+}
+.workstation > .status-strip .health > span {
+  padding: 3px 0;
+}
+.workstation .view-toolbar strong {
+  font-size: 18px;
+}
+.workstation > .steps {
+  margin: 6px 20px;
+  min-height: 40px;
+  gap: 12px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+}
+.workstation > .steps > a,
+.workstation > .steps > button {
+  height: 40px;
+  flex: 0 0 auto;
+  gap: 9px;
+  padding: 6px 14px;
+  border-radius: 10px;
+  color: var(--muted);
+  background: var(--soft);
+  font-size: 14px;
+}
+.workflow-number {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: #285ce5;
+  background: #dce8ff;
+  font: 14px var(--numeric-font);
+}
+.workstation > .steps .active {
+  background: #285cff;
+  color: #fff;
+}
+.workstation > .steps .active .workflow-number {
+  background: #ffffff30;
+  color: #fff;
+}
+.workstation > .steps > :focus-visible {
+  outline: 2px solid #285cff;
+  outline-offset: -2px;
+}
+.workstation.dark .function-number,
+.workstation.dark .workflow-number {
+  background: #28466d;
+  color: #bdd5ff;
+}
+.workstation.dark > .steps > a,
+.workstation.dark > .steps > button {
+  background: var(--soft);
+  color: #adbed3;
+}
+.workstation.dark > .steps .active {
+  background: #3565df;
+  color: #fff;
+}
+@media (min-width: 1600px) {
+  .workspace-topbar {
+    height: 76px;
+    min-height: 76px;
+    gap: 20px;
+  }
+  .function-icon {
+    width: 52px;
+    height: 52px;
+  }
+  .workstation .workspace-topbar h1 {
+    font-size: 32px;
+  }
+}
+@media (max-width: 1399px) {
+  .demo-badge-detail {
+    display: none;
+  }
+  .workspace-topbar,
+  .workspace-function {
+    gap: 12px;
+  }
+  .workspace-actions {
+    gap: 10px;
+  }
+}
+@media (max-width: 1199px) {
+  .workstation .workspace-brand {
+    font-size: 15px;
+  }
+  .workstation .workspace-topbar h1 {
+    font-size: 24px;
+  }
+  .function-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .function-number {
+    font-size: 16px;
+  }
+  .workstation > .steps {
+    gap: 8px;
+  }
+  .workstation > .steps > a,
+  .workstation > .steps > button {
+    padding-inline: 10px;
+  }
+}
+@media (max-width: 950px) {
+  .workstation .workspace-brand,
+  .topbar-divider {
+    display: none;
+  }
+  .function-purpose {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .workspace-topbar .demo-banner {
+    display: none;
+  }
+}
