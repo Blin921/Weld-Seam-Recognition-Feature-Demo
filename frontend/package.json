@@ -9,7 +9,9 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "build:demo": "node scripts/build-static-demo.mjs",
+    "test:demo": "npm run build:demo && playwright test -c playwright.static.config.ts"
   },
   "dependencies": {
     "lucide-react": "^0.468.0",
@@ -24,6 +26,7 @@
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/three": "^0.180.0",
+    "esbuild": "^0.28.2",
     "eslint": "^9.0.0",
     "eslint-config-next": "^16.0.0",
     "typescript": "^5.9.0",

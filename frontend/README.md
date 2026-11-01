@@ -131,3 +131,9 @@ npm run test:e2e
 - 点云视图 404 保持待识别空态；其他错误显示后端 `detail`，非 JSON 错误显示 HTTP 状态码。
 
 `tests/spec-regressions.spec.ts` 覆盖以上问题和下载成功、动态筛选、全部过滤、视图 404/502 的边界情况。使用模拟接口，真实后端、设备与性能验收仍需单独完成。
+
+## 单文件离线演示
+
+仓库的 [`demo/WELD-VISION.html`](../demo/WELD-VISION.html) 是可直接发送的离线交互演示。只需下载这个 HTML 文件，用新版 Edge/Chrome 打开，不需要 Node.js、服务器或网络。功能界面、样式和合成数据复用当前源码，页面跳转采用 URL hash，刷新后恢复初始演示状态。内置演示模式不提供后端连接入口。操作指南见 [`demo/使用说明.txt`](../demo/使用说明.txt)。
+
+源码更新后，在 `frontend/` 运行 `npm run build:demo` 重新生成该文件；新增的 esbuild 是开发构建依赖。`npm run test:demo` 使用单独的浏览器测试配置，从临时目录内只复制的一份 HTML 以 `file://` 打开，在断网状态验证完整演示、下载、页面切换与刷新，并检查无 HTTP 请求。

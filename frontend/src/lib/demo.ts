@@ -1,6 +1,8 @@
 import type { Frame, Seam, Vec } from "./core";
+export const isStaticDemo = process.env.NEXT_PUBLIC_STATIC_DEMO === "1";
 const key = "weld-vision-demo";
 export function isDemoMode() {
+  if (isStaticDemo) return true;
   try {
     return typeof window !== "undefined" && sessionStorage.getItem(key) === "1";
   } catch {
@@ -8,6 +10,7 @@ export function isDemoMode() {
   }
 }
 export function setDemoMode(enabled: boolean) {
+  if (isStaticDemo) return;
   if (enabled) {
     const entering = !isDemoMode();
     sessionStorage.setItem(key, "1");

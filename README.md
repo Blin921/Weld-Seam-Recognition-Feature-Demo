@@ -10,3 +10,5 @@ npm run dev
 ```
 
 完整的启动、后端代理、测试及已知联调限制见 [前端说明](frontend/README.md)，局域网部署见 [部署说明](frontend/DEPLOYMENT.md)。
+
+离线展示可直接下载 [`demo/WELD-VISION.html`](demo/WELD-VISION.html)，用 Edge/Chrome 打开。只需分享这一个文件，无需安装依赖或连接后端。操作方法见 [使用说明](demo/使用说明.txt)。

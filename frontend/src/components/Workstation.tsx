@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { requestApi } from "@/lib/transport";
 import { useDemoMode } from "@/lib/useDemoMode";
-import { setDemoMode, isDemoMode } from "@/lib/demo";
+import { setDemoMode, isDemoMode, isStaticDemo } from "@/lib/demo";
 import { useCompactLayout } from "@/lib/useCompactLayout";
 import { mergeCalibration } from "@/lib/calibration";
 import { CalibrationControls, CalibrationResults } from "./CalibrationPanel";
@@ -956,7 +956,7 @@ export default function Workstation() {
               </div>
             </details>
           )}
-          {demo && (
+          {demo && !isStaticDemo && (
             <button
               className="exit-demo"
               disabled={!!active || busy}
