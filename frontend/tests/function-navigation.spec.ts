@@ -37,8 +37,8 @@ for (const width of [1366, 1920]) {
       await expect(page.locator(".function-number")).toHaveText(
         String(index + 1).padStart(2, "0"),
       );
-      await expect(page.locator(".function-purpose")).toBeVisible();
-      await expect(page.locator(".steps > a, .steps > button")).toHaveCount(6);
+      await expect(page.locator(".function-purpose")).toHaveText(/.+/);
+      await expect(page.locator(".steps > a, .steps > button")).toHaveCount(7);
       await expect(
         page.locator(".workflow-pager, .step-state, .step-warning"),
       ).toHaveCount(0);
@@ -64,7 +64,7 @@ for (const width of [1366, 1920]) {
       });
       expect(geometry).toEqual({
         overlap: false,
-        fontSize: width === 1366 ? 22 : 26,
+        fontSize: width === 1366 ? 20 : 22,
         navAtTop: true,
         navOverflow: false,
         pageOverflow: false,
@@ -80,6 +80,6 @@ for (const width of [1366, 1920]) {
     await expect(selected).toBeVisible();
     expect(
       await selected.evaluate((element) => getComputedStyle(element).color),
-    ).toBe("rgb(255, 194, 154)");
+    ).toBe("rgb(237, 161, 90)");
   });
 }

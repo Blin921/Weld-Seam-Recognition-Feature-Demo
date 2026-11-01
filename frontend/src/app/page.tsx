@@ -9,6 +9,7 @@ import {
 import DemoEntry from "@/components/DemoEntry";
 import SiteHeader from "@/components/SiteHeader";
 import SystemInfoButton from "@/components/SystemInfoButton";
+import FeatureIllustration from "@/components/FeatureIllustration";
 import PointCloudIllustration from "@/components/PointCloudIllustration";
 const features = [
   {
@@ -66,8 +67,8 @@ export default function Home() {
             坐标标定与机器人程序生成的完整流程。
           </p>
           <div className="home-actions">
-            <Link className="home-cta" href="#features">
-              探索系统功能 ↗
+            <Link className="home-cta" href="/scan">
+              进入工作台 →
             </Link>
             <DemoEntry />
           </div>
@@ -88,6 +89,7 @@ export default function Home() {
               <f.icon size={27} strokeWidth={1.4} />
               <h3>{f.title}</h3>
               <p>{f.description}</p>
+              <FeatureIllustration kind={f.id} />
               <span>查看详情 →</span>
             </Link>
           ))}
@@ -95,9 +97,13 @@ export default function Home() {
       </section>
       <footer className="home-footer">
         <p className="home-disclaimer" id="about">
-          焊缝识别系统 ·
-          首页点云为示意图；演示模式使用合成数据，真实模式以后端响应为准。系统不启动机器人。
+          合成示例 · 真实模式以后台响应为准 · 只生成与传输文件，不启动机器人
         </p>
+        <div className="home-information">
+          <Link href="/#features">功能中心</Link>
+          <SystemInfoButton topic="architecture">技术架构</SystemInfoButton>
+          <SystemInfoButton topic="about">关于系统</SystemInfoButton>
+        </div>
         <SystemInfoButton topic="architecture" className="architecture">
           技术架构与部署说明
         </SystemInfoButton>

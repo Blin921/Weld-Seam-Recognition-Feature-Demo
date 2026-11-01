@@ -27,7 +27,7 @@ const result = await build({
 });
 const css = (
   await Promise.all(
-    ["globals.css", "industrial.css"].map((file) =>
+    ["globals.css", "industrial.css", "pdf-reference.css"].map((file) =>
       readFile(path.join(root, "src/app", file), "utf8"),
     ),
   )

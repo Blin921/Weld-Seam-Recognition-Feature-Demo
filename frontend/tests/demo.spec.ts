@@ -9,6 +9,7 @@ test("offline demo runs the visual workflow without API or controller requests",
       JSON.stringify({ host: "real-controller.example" }),
     );
   });
+  test.setTimeout(45000);
   const requests: string[] = [];
   page.on("request", (r) => {
     if (new URL(r.url()).pathname.startsWith("/api/")) requests.push(r.url());

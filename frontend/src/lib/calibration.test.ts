@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mergeCalibration } from "./calibration";
+import { mergeCalibration, validatedMatrix } from "./calibration";
 describe("calibration residual observations", () => {
   const previous = {
     calib_tag: "A",
@@ -24,5 +24,32 @@ describe("calibration residual observations", () => {
       mergeCalibration({ calib_tag: "A", uncalibrated: true }, previous)
         .max_dev_mm,
     ).toBeUndefined();
+  });
+});
+
+describe("read-only matrix shape", () => {
+  it("accepts a finite 4x4 matrix", () => {
+    const matrix = [
+      [1, 0, 0, 320],
+      [0, 1, 0, 125],
+      [0, 0, 1, -20],
+      [0, 0, 0, 1],
+    ];
+    expect(validatedMatrix(matrix)).toBe(matrix);
+  });
+  it("does not fabricate a matrix when it is missing or malformed", () => {
+    for (const value of [
+      null,
+      undefined,
+      [],
+      [null, null, null, null],
+      [
+        [NaN, 0, 0, 0],
+        [0, 1, 0, 0],
+        [0, 0, 1, 0],
+        [0, 0, 0, 1],
+      ],
+    ])
+      expect(validatedMatrix(value)).toBeUndefined();
   });
 });

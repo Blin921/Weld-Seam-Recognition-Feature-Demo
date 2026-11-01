@@ -8,7 +8,7 @@ test("homepage info buttons open readable dialogs, close accessibly, and preserv
   await page.goto("/");
   const before = await page.locator(".home-hero").boundingBox();
   const architecture = page
-    .locator(".site-header")
+    .locator(".home-footer")
     .getByRole("button", { name: "技术架构", exact: true });
   await architecture.click();
   const dialog = page.getByRole("dialog", { name: "技术架构与部署说明" });
@@ -28,7 +28,7 @@ test("homepage info buttons open readable dialogs, close accessibly, and preserv
   await expect(architecture).toBeFocused();
   expect(await page.locator(".home-hero").boundingBox()).toEqual(before);
   await page
-    .locator(".site-header")
+    .locator(".home-footer")
     .getByRole("button", { name: "关于系统", exact: true })
     .click();
   const about = page.getByRole("dialog", { name: "关于焊缝识别系统" });
@@ -51,7 +51,7 @@ test("homepage info buttons open readable dialogs, close accessibly, and preserv
     await page.evaluate(() => document.documentElement.scrollHeight),
   ).toBeLessThanOrEqual(768);
   await page
-    .locator(".site-header")
+    .locator(".home-footer")
     .getByRole("button", { name: "关于系统", exact: true })
     .click();
   await page.mouse.click(5, 5);

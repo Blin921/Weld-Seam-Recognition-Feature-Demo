@@ -18,6 +18,8 @@ type Props = {
   wpr: Vec[];
   distance: number;
   light?: boolean;
+  grid?: boolean;
+  calibrationPairs?: number[][];
   calculation?: Calculation | null;
   motionPaused?: boolean;
 };
@@ -29,6 +31,7 @@ type Runtime = {
   cloud: THREE.Group;
   seams: THREE.Group;
   helpers: THREE.Group;
+  calibration: THREE.Group;
   tcp: THREE.Group;
   trail: THREE.Line;
   scan: THREE.Group;
@@ -52,6 +55,11 @@ function disposeTree(root: THREE.Object3D) {
         materials.add(m),
       );
     }
+    if (o instanceof THREE.Sprite) materials.add(o.material);
+  });
+  materials.forEach((material) => {
+    if ("map" in material && material.map instanceof THREE.Texture)
+      material.map.dispose();
   });
   geometries.forEach((g) => g.dispose());
   materials.forEach((m) => m.dispose());
@@ -88,14 +96,13 @@ export default function CloudView(p: Props) {
     if (p.cloud) {
       const color = new THREE.Color();
       for (let i = 0; i < count; i++) {
-        semantic.set(
-          [
-            p.cloud.rgb[i * 3] / 255,
-            p.cloud.rgb[i * 3 + 1] / 255,
-            p.cloud.rgb[i * 3 + 2] / 255,
-          ],
-          i * 3,
+        color.setRGB(
+          p.cloud.rgb[i * 3] / 255,
+          p.cloud.rgb[i * 3 + 1] / 255,
+          p.cloud.rgb[i * 3 + 2] / 255,
+          THREE.SRGBColorSpace,
         );
+        semantic.set([color.r, color.g, color.b], i * 3);
         if (p.cloud.instance[i] === 0) color.setRGB(0.16, 0.18, 0.2);
         else color.setHSL((p.cloud.instance[i] * 0.618) % 1, 0.7, 0.55);
         instance.set([color.r, color.g, color.b], i * 3);
@@ -120,9 +127,11 @@ export default function CloudView(p: Props) {
       camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100000),
       controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
+    camera.up.set(0, 0, 1);
     const cloud = new THREE.Group(),
       seams = new THREE.Group(),
       helpers = new THREE.Group(),
+      calibration = new THREE.Group(),
       tcp = new THREE.Group();
     const coordinateGroup = new THREE.Group();
     coordinateGroup.scale.y = -1;
@@ -169,7 +178,16 @@ export default function CloudView(p: Props) {
       new THREE.MeshBasicMaterial({ color: 0xffa84b }),
     );
     probe.visible = false;
-    scene.add(cloud, seams, helpers, coordinateGroup, trail, scan, probe);
+    scene.add(
+      cloud,
+      seams,
+      helpers,
+      calibration,
+      coordinateGroup,
+      trail,
+      scan,
+      probe,
+    );
     const rt: Runtime = {
       scene,
       camera,
@@ -178,6 +196,7 @@ export default function CloudView(p: Props) {
       cloud,
       seams,
       helpers,
+      calibration,
       tcp,
       trail,
       scan,
@@ -293,9 +312,16 @@ export default function CloudView(p: Props) {
   }, [p.cloud, p.mode, palettes]);
   useEffect(() => {
     const points = runtime.current?.cloud.children[0];
-    if (points instanceof THREE.Points)
-      points.material.setValues({ size: p.size });
-  }, [p.cloud, p.size]);
+    if (points instanceof THREE.Points) {
+      const changed = points.material.vertexColors !== (p.mode !== "raw");
+      points.material.setValues({
+        size: p.size,
+        vertexColors: p.mode !== "raw",
+        color: p.mode === "raw" ? 0x8fa5b4 : 0xffffff,
+        ...(changed ? { needsUpdate: true } : {}),
+      });
+    }
+  }, [p.cloud, p.size, p.mode]);
   useEffect(() => {
     const rt = runtime.current;
     if (!rt) return;
@@ -306,9 +332,9 @@ export default function CloudView(p: Props) {
     rt.span = span;
     rt.center = center;
     rt.camera.position.set(
-      center[0] + span * 0.9,
-      center[1] + span * 0.6,
-      center[2] + span * 1.5,
+      center[0] + span * 0.82,
+      center[1] + span * 0.62,
+      center[2] + span * 0.85,
     );
     rt.controls.target.set(...center);
     rt.camera.lookAt(...center);
@@ -331,19 +357,90 @@ export default function CloudView(p: Props) {
     const grid = new THREE.GridHelper(
       size,
       size / 10,
-      p.light ? 0xb9c4c8 : 0x394552,
-      p.light ? 0xcfd7d9 : 0x26313c,
+      p.light ? 0xc1cdd5 : 0x243441,
+      p.light ? 0xd2dce2 : 0x172733,
     );
+    grid.rotation.x = Math.PI / 2;
+    grid.visible = p.grid !== false;
     grid.position.set(
       center[0],
-      p.cloud ? -p.cloud.header.extent[4] - 10 : -100,
-      center[2],
+      center[1],
+      p.cloud ? p.cloud.header.extent[2] - 15 : -100,
     );
     const axes = new THREE.AxesHelper(span * 0.13);
-    axes.position.set(center[0] - span * 0.6, grid.position.y, center[2]);
+    axes.position.set(
+      center[0] - span * 0.55,
+      center[1] - span * 0.5,
+      grid.position.z,
+    );
     rt.helpers.add(grid, axes);
-    rt.scene.background = new THREE.Color(p.light ? "#e5ebed" : "#111a23");
-  }, [p.cloud, p.light]);
+    rt.scene.background = new THREE.Color(p.light ? "#dce5ea" : "#07131b");
+  }, [p.cloud, p.light, p.grid]);
+  useEffect(() => {
+    const rt = runtime.current;
+    if (!rt) return;
+    clearGroup(rt.calibration);
+    for (const [index, row] of (p.calibrationPairs ?? []).entries()) {
+      if (row.length !== 6 || !row.every(Number.isFinite)) continue;
+      const point = displayPoint(row.slice(0, 3) as Vec);
+      const top: [number, number, number] = [
+        point[0],
+        point[1],
+        point[2] + rt.span * (0.15 + index * 0.17),
+      ];
+      const line = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(...point),
+          new THREE.Vector3(...top),
+        ]),
+        new THREE.LineBasicMaterial({ color: 0xf1ab35 }),
+      );
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(rt.span * 0.009, 12, 12),
+        new THREE.MeshBasicMaterial({
+          color: [0xffb326, 0x348bef, 0x34bc73][index % 3],
+        }),
+      );
+      marker.position.set(...point);
+      const canvas = document.createElement("canvas");
+      canvas.width = 600;
+      canvas.height = 120;
+      const ctx = canvas.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = p.light ? "#f1f5f6e8" : "#142631eb";
+        ctx.fillRect(0, 0, 600, 120);
+        ctx.font = "38px Arial";
+        ctx.fillStyle = p.light ? "#233945" : "#e6eff3";
+        ctx.fillText(
+          `#${index + 1} C (${row
+            .slice(0, 3)
+            .map((v) => v.toFixed(1))
+            .join(", ")})`,
+          12,
+          40,
+        );
+        ctx.fillStyle = "#d87931";
+        ctx.fillText(
+          `R (${row
+            .slice(3)
+            .map((v) => v.toFixed(1))
+            .join(", ")})`,
+          12,
+          85,
+        );
+        const label = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: new THREE.CanvasTexture(canvas),
+            depthTest: false,
+          }),
+        );
+        label.position.set(top[0] + rt.span * 0.16, top[1], top[2]);
+        label.scale.set(rt.span * 0.46, rt.span * 0.092, 1);
+        rt.calibration.add(label);
+      }
+      rt.calibration.add(line, marker);
+    }
+  }, [p.calibrationPairs, p.cloud, p.light]);
   useEffect(() => {
     const rt = runtime.current;
     if (!rt) return;

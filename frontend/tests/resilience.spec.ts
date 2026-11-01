@@ -322,9 +322,11 @@ test("compact demo header leaves most of a 1366x768 screen for the workspace", a
     page.getByRole("button", { name: "退出演示，连接后端" }),
   ).toBeVisible();
   await expect(page.locator(".health")).toContainText("演示未标定");
+  await page.getByLabel("显示设置", { exact: true }).click();
   await page.getByText("演示说明", { exact: true }).click();
   await expect(page.locator(".workspace-help>div")).toBeVisible();
   await page.getByText("演示说明", { exact: true }).click();
+  await page.getByLabel("显示设置", { exact: true }).click();
   await page.getByRole("button", { name: "展开演示区", exact: true }).click();
   await expect(page.locator(".control-panel")).not.toBeVisible();
   expect(

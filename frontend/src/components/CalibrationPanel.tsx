@@ -7,6 +7,7 @@ import {
   Settings2,
   ArrowRight,
 } from "lucide-react";
+import { validatedMatrix } from "@/lib/calibration";
 import type { Calib, Frame } from "@/lib/core";
 export const DEMO_CALIBRATION_PAIRS = [
   [0, 0, 500, 320, 125, 480],
@@ -31,7 +32,7 @@ type ControlsProps = {
   onClear: () => void;
 };
 export function CalibrationControls(p: ControlsProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const saved = !p.calib.uncalibrated;
   const warning = (p.calib.max_dev_mm ?? 0) > 1.5;
   return (
@@ -171,12 +172,20 @@ export function CalibrationControls(p: ControlsProps) {
                     </button>
                   </h4>
                   <small>相机 X / Y / Z　→　基座 X / Y / Z</small>
+                  <div className="pair-column-headings">
+                    <span>相机 XYZ（mm）</span>
+                    <span>基座 XYZ（mm）</span>
+                  </div>
                   <div className="pair-grid">
                     {row.map((v, j) => (
                       <input
                         aria-label={`点对${i + 1}坐标${j + 1}`}
                         key={j}
                         type="number"
+                        style={{
+                          gridColumn: j < 3 ? 1 : 2,
+                          gridRow: (j % 3) + 1,
+                        }}
                         step="any"
                         value={v}
                         onChange={(e) =>
@@ -249,6 +258,8 @@ export function CalibrationResults({
   demo: boolean;
   onNext: () => void;
 }) {
+  const [copyStatus, setCopyStatus] = useState("");
+  const matrix = calib.uncalibrated ? undefined : validatedMatrix(calib.matrix);
   const saved = !calib.uncalibrated,
     hasResidual = calib.max_dev_mm !== undefined,
     warning = (calib.max_dev_mm ?? 0) > 1.5;
@@ -317,6 +328,40 @@ export function CalibrationResults({
           </div>
         ))}
       </div>
+      <section className="calibration-matrix">
+        <h3>
+          4×4 转换矩阵 <small>相机 → 基座</small>
+          {matrix && (
+            <button
+              aria-label="复制转换矩阵"
+              onClick={() =>
+                navigator.clipboard
+                  .writeText(JSON.stringify(matrix))
+                  .then(() => setCopyStatus("已复制"))
+                  .catch(() => setCopyStatus("复制失败，可选中表格手动复制"))
+              }
+            >
+              复制
+            </button>
+          )}
+        </h3>
+        {matrix ? (
+          <table>
+            <tbody>
+              {matrix.map((row, i) => (
+                <tr key={i}>
+                  {row.map((value, j) => (
+                    <td key={j}>{value.toFixed(4)}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p>尚未提供转换矩阵</p>
+        )}
+        {copyStatus && <p>{copyStatus}</p>}
+      </section>
       {saved && hasResidual && (
         <div className={warning ? "warning" : "calibration-success"}>
           {warning
@@ -337,7 +382,20 @@ export function CalibrationResults({
       {saved && calib.input_kind === "matrix" && (
         <p className="calibration-note">本次采用矩阵输入，不提供对应点组数。</p>
       )}
-      <button className="secondary full" onClick={onNext}>
+
+      <dl className="calibration-result-facts">
+        <dt>标定标签</dt>
+        <dd>{calib.calib_tag}</dd>
+        <dt>输入方式</dt>
+        <dd>
+          {calib.input_kind === "matrix"
+            ? "矩阵"
+            : calib.input_kind === "pairs"
+              ? "点对"
+              : "未提供"}
+        </dd>
+      </dl>
+      <button className="primary full calibration-next" onClick={onNext}>
         下一步：轨迹预演
         <ArrowRight size={16} />
       </button>

@@ -5,8 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { requestApi } from "@/lib/transport";
 import { useDemoMode } from "@/lib/useDemoMode";
 import { setDemoMode, isDemoMode, isStaticDemo } from "@/lib/demo";
+import { useTheme } from "@/lib/useTheme";
+import DisplaySettings from "./DisplaySettings";
 import { useCompactLayout } from "@/lib/useCompactLayout";
-import { mergeCalibration } from "@/lib/calibration";
+import { mergeCalibration, validatedMatrix } from "@/lib/calibration";
 import { CalibrationControls, CalibrationResults } from "./CalibrationPanel";
 import { samplePath } from "@/lib/core";
 import SystemLogo from "./SystemLogo";
@@ -37,6 +39,8 @@ import {
   ShieldCheck,
   Terminal,
   Workflow,
+  Home,
+  Grid3X3,
   Sun,
   Moon,
 } from "lucide-react";
@@ -151,6 +155,8 @@ export default function Workstation() {
   const tab = Math.max(0, routes.indexOf(pathname));
   const acquisition = pathname === "/scan";
   const demo = useDemoMode();
+  const [dark, setDark] = useTheme();
+  const [grid, setGrid] = useState(true);
   const process = useCalculation(demo);
   const { update: updateCalculation, finish: finishCalculation } = process;
   const taskCalculation = useRef<Calculation | null>(null);
@@ -235,7 +241,6 @@ export default function Workstation() {
     [drawerState, setDrawerState] = useState({ path: pathname, open: false }),
     [toast, setToast] = useState(""),
     [events, setEvents] = useState<string[]>([]),
-    [dark, setDark] = useState(false),
     [playing, setPlaying] = useState(false),
     [seconds, setSeconds] = useState(0),
     [speed, setSpeed] = useState(1),
@@ -646,6 +651,12 @@ export default function Workstation() {
       if (calculation) await holdDemoAnimation(demo, calculation.startedAt);
       const status: Calib = {
         ...result,
+        matrix: clear
+          ? undefined
+          : validatedMatrix(
+              result.matrix ??
+                ("matrix" in payload ? payload.matrix : undefined),
+            ),
         uncalibrated: clear,
         has_calib: !clear,
         pair_count:
@@ -929,6 +940,66 @@ export default function Workstation() {
       )}
     </div>
   );
+  const programPreview = (
+    <section className="program-preview">
+      <h3>
+        <FileCode2 size={16} />
+        程序预览<span>{demo ? "示例文本（不可执行）" : "后台程序文本"}</span>
+      </h3>
+      {hasProgram ? (
+        <>
+          <div className="section-divider" />
+          {!!program.issues?.length && (
+            <details className="program-issues">
+              <summary>规避提示，不阻断（{program.issues.length}）</summary>{" "}
+              {program.issues?.map((issue, i) => (
+                <div key={i} className="warning">
+                  提示（不阻断）：
+                  {typeof issue === "string" ? issue : JSON.stringify(issue)}
+                </div>
+              ))}
+            </details>
+          )}
+          <div className="code-header">
+            <strong>{program.ls_name}</strong>
+            <button
+              onClick={() =>
+                navigator.clipboard
+                  .writeText(program.ls_text)
+                  .then(() => notify("程序已复制"))
+                  .catch(fail)
+              }
+            >
+              复制
+            </button>
+            <a
+              href={
+                "/api/program/" +
+                encodeURIComponent(program.ls_name.replace(/\.ls$/i, "")) +
+                "/download"
+              }
+              download={demo ? "DEMO_ONLY.demo.txt" : undefined}
+              onClick={(e) => {
+                e.preventDefault();
+                void downloadProgram(program);
+              }}
+            >
+              <Download size={15} />
+              下载
+            </a>
+          </div>
+          <pre className="program-code">{program.ls_text}</pre>
+          {calib.uncalibrated && (
+            <div className="warning danger-box">
+              禁止上机：当前程序使用相机系坐标。
+            </div>
+          )}
+        </>
+      ) : (
+        <div className="empty-small">请先生成当前焊缝的程序。</div>
+      )}
+    </section>
+  );
   const contextContent = (
     <div className="context-content">
       {acquisition ? (
@@ -961,7 +1032,8 @@ export default function Workstation() {
         />
       ) : tab === 3 ? (
         <>
-          <h3>TCP 实时信息</h3>
+          {programPreview}
+          <h3>TCP 坐标位置</h3>
           {hasProgram ? (
             <>
               <h2 className="teal-heading">
@@ -994,6 +1066,35 @@ export default function Workstation() {
         </>
       ) : tab === 4 ? (
         <>
+          <h3>当前帧与选中焊缝</h3>
+          <dl>
+            <dt>当前帧</dt>
+            <dd>{fid || "—"}</dd>
+            <dt>选中焊缝</dt>
+            <dd>
+              {selectedSeam
+                ? `#${selectedSeam.id} · ${selectedSeam.shape}`
+                : "—"}
+            </dd>
+            <dt>路径点数</dt>
+            <dd>{hasProgram ? points.length : "—"}</dd>
+          </dl>
+          <h3>任务状态</h3>
+          <ul className="context-task-states">
+            {[
+              ["点云载入", !!cloud],
+              ["识别结果", seams.length > 0],
+              ["坐标标定", !calib.uncalibrated],
+              ["程序生成", !!hasProgram],
+              ["文件传输", !!transfer],
+            ].map(([label, ready]) => (
+              <li key={String(label)} className={ready ? "ready" : ""}>
+                <span>{ready ? "✓" : "○"}</span>
+                {label}
+                <small>{ready ? "已就绪" : "未完成"}</small>
+              </li>
+            ))}
+          </ul>
           <h3>传输结果</h3>
           {transfer ? (
             <>
@@ -1032,7 +1133,7 @@ export default function Workstation() {
           <h3>
             识别结果 <span>↑ ↓ 切换</span>
           </h3>
-          {seamList}
+          {tab !== 2 && seamList}
           <div className="section-divider" />
           <h3>
             <Crosshair size={16} />
@@ -1050,6 +1151,19 @@ export default function Workstation() {
               <dd>{selectedSeam.length_mm.toFixed(2)} mm</dd>
               <dt>坐标系</dt>
               <dd>相机坐标系</dd>
+              <dt>起点坐标（X,Y,Z）</dt>
+              <dd>
+                {selectedSeam.trajectory_mm[0]
+                  ?.map((v) => v.toFixed(2))
+                  .join(", ") ?? "—"}
+              </dd>
+              <dt>终点坐标（X,Y,Z）</dt>
+              <dd>
+                {selectedSeam.trajectory_mm
+                  .at(-1)
+                  ?.map((v) => v.toFixed(2))
+                  .join(", ") ?? "—"}
+              </dd>
             </dl>
           ) : (
             <div className="empty-small">
@@ -1102,14 +1216,19 @@ export default function Workstation() {
     <main
       className={
         (dark ? "workstation dark" : "workstation") +
-        (focusView && tab !== 4 ? " presentation" : "")
+        (focusView ? " presentation" : "")
       }
+      data-page={acquisition ? "scan" : routes[tab].slice(1)}
     >
       <div className="workspace-topbar">
         <Link href="/" className="site-logo workspace-brand" title="返回首页">
           <SystemLogo /> <span>焊缝识别系统</span>
         </Link>
         <nav className="steps" aria-label="工作流导航">
+          <Link href="/" className="nav-home" aria-label="返回首页">
+            <Home size={15} />
+            首页
+          </Link>
           <Link
             className={acquisition ? "active" : ""}
             href="/scan"
@@ -1142,19 +1261,69 @@ export default function Workstation() {
           ))}
         </nav>
         <div className="workspace-actions">
+          {" "}
+          <div className="health">
+            <span
+              title={health?.model_error ?? "模型健康状态"}
+              className={health?.model_ok ? "ok" : "warn"}
+            >
+              <i />
+              {demo
+                ? "模拟模型"
+                : `模型${health?.model_ok ? "就绪" : "未就绪"}`}
+            </span>
+            <span
+              title="缺失时请编译后端 C++ 解算器"
+              className={health?.cpp_ok ? "ok" : "warn"}
+            >
+              <i />
+              {demo ? "模拟解算" : "C++ 解算器"}
+            </span>
+            <span
+              title={
+                calib.uncalibrated
+                  ? "未标定：坐标仍是相机系，禁止上机"
+                  : calib.max_dev_mm === undefined
+                    ? "已标定；后端未提供本次残差"
+                    : `最大残差 ${calib.max_dev_mm} mm${calib.max_dev_mm > 1.5 ? "，超过 1.5mm，请检查标定点对" : ""}`
+              }
+              className={
+                calib.uncalibrated
+                  ? "danger"
+                  : (calib.max_dev_mm ?? 0) > 1.5
+                    ? "warn"
+                    : "ok"
+              }
+            >
+              <i />
+              {demo
+                ? calib.uncalibrated
+                  ? "演示未标定"
+                  : "模拟标定"
+                : calib.uncalibrated
+                  ? "未标定"
+                  : "已标定"}
+            </span>
+          </div>
+          <button
+            className="icon-button theme-toggle"
+            aria-label="切换深浅主题"
+            aria-pressed={dark}
+            title={dark ? "切换为浅色模式" : "切换为深色模式"}
+            onClick={() => setDark(!dark)}
+          >
+            {dark ? (
+              <Sun size={19} aria-hidden="true" />
+            ) : (
+              <Moon size={19} aria-hidden="true" />
+            )}
+          </button>
+          <DisplaySettings dark={dark} onTheme={setDark} demo={demo} />
           {demo && (
             <div className="demo-banner">
-              <strong>演示模式</strong>
+              <strong>离线演示</strong>
               <span className="demo-badge-detail"> · 合成示例数据</span>
             </div>
-          )}
-          {demo && (
-            <details className="workspace-help">
-              <summary>演示说明</summary>
-              <div>
-                使用合成点云与示例轨迹，无真实推理、无真实标定。模拟下发不会连接设备，下载的演示文本不可用于机器人。
-              </div>
-            </details>
           )}
           {demo && !isStaticDemo && (
             <button
@@ -1169,85 +1338,9 @@ export default function Workstation() {
               <span aria-hidden="true">连接后端</span>
             </button>
           )}
-          <Link href="/">返回首页</Link>
         </div>
       </div>
-      <div className="status-strip">
-        <div className="workspace-function">
-          <div className="function-icon" aria-hidden="true">
-            <PageIcon size={28} strokeWidth={1.8} />
-          </div>
-          <div className="function-heading">
-            <div className="function-title-line">
-              <h1>{pageTitle}</h1>
-              <span
-                className="function-number"
-                aria-label={`第 ${pageNumber} 个功能`}
-              >
-                {String(pageNumber).padStart(2, "0")}
-              </span>
-            </div>
-            <p className="function-purpose">{pagePurpose}</p>
-          </div>
-        </div>
 
-        <div className="health">
-          <span
-            title={health?.model_error ?? "模型健康状态"}
-            className={health?.model_ok ? "ok" : "warn"}
-          >
-            <i />
-            {demo
-              ? "模拟模型（未加载）"
-              : `模型${health?.model_ok ? "就绪" : "未就绪"}`}
-          </span>
-          <span
-            title="缺失时请编译后端 C++ 解算器"
-            className={health?.cpp_ok ? "ok" : "warn"}
-          >
-            <i />
-            {demo ? "模拟解算（无 C++）" : "C++ 解算器"}
-          </span>
-          <span
-            title={
-              calib.uncalibrated
-                ? "未标定：坐标仍是相机系，禁止上机"
-                : calib.max_dev_mm === undefined
-                  ? "已标定；后端未提供本次残差"
-                  : `最大残差 ${calib.max_dev_mm} mm${calib.max_dev_mm > 1.5 ? "，超过 1.5mm，请检查标定点对" : ""}`
-            }
-            className={
-              calib.uncalibrated
-                ? "danger"
-                : (calib.max_dev_mm ?? 0) > 1.5
-                  ? "warn"
-                  : "ok"
-            }
-          >
-            <i />
-            {demo
-              ? calib.uncalibrated
-                ? "演示未标定"
-                : "模拟标定"
-              : calib.uncalibrated
-                ? "未标定"
-                : "已标定"}
-          </span>
-        </div>
-        <button
-          className="icon-button theme-toggle"
-          aria-label="切换深浅主题"
-          aria-pressed={dark}
-          title={dark ? "切换为浅色模式" : "切换为深色模式"}
-          onClick={() => setDark(!dark)}
-        >
-          {dark ? (
-            <Sun size={19} aria-hidden="true" />
-          ) : (
-            <Moon size={19} aria-hidden="true" />
-          )}
-        </button>
-      </div>
       {connectionIssue && (
         <div role="status" className="connection-warning">
           {connectionIssue}。恢复网络后自动继续，也可切回浏览器标签页立即重试。
@@ -1355,76 +1448,91 @@ export default function Workstation() {
                     </div>
                   )}
                 </div>
-                <div className="recognition-settings">
-                  <div className="section-divider" />
-                  <h3>
-                    <ScanLine size={16} />
-                    识别设置
-                  </h3>
-                  <label className="toggle-row">
-                    <div>
-                      {demo ? "复用示例轨迹" : "复用历史结果"}
-                      <small>离线演示 · 无需加载模型</small>
-                    </div>
-                    <input
-                      type="checkbox"
-                      checked={reuse}
-                      onChange={(e) => setReuse(e.target.checked)}
-                    />
-                  </label>
-                  <details>
+                {!acquisition && (
+                  <div className="recognition-settings">
+                    <div className="section-divider" />
+                    <h3>
+                      <ScanLine size={16} />
+                      识别设置
+                    </h3>
+                    <label className="toggle-row">
+                      <div>
+                        {demo ? "复用示例轨迹" : "复用历史结果"}
+                        <small>离线演示 · 无需加载模型</small>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={reuse}
+                        onChange={(e) => setReuse(e.target.checked)}
+                      />
+                    </label>
+                    <details>
+                      <summary>
+                        <Settings2 size={15} />
+                        高级参数
+                        <ChevronDown size={14} />
+                      </summary>
+                      <Fields
+                        value={recognition}
+                        labels={{
+                          voxel: "voxel 大小（mm）",
+                          tile: "tile 大小（mm）",
+                          stride: "stride 步长（mm）",
+                          smooth_k: "smooth_k 邻域",
+                          smooth_r: "smooth_r 半径（mm）",
+                          max_gap: "max_gap 最大间隙（m）",
+                          min_len: "min_len 最小长度（mm）",
+                        }}
+                        onChange={(v) =>
+                          setRecognition(v as typeof recognition)
+                        }
+                      />
+                    </details>
+                    <button
+                      className="primary full"
+                      disabled={!fid || busy || !!active}
+                      onClick={() => void task("recognize")}
+                    >
+                      <ScanLine size={17} />
+                      {active ? "任务进行中…" : "开始识别"}
+                    </button>
+                  </div>
+                )}
+                {acquisition && (
+                  <details className="camera" open>
                     <summary>
-                      <Settings2 size={15} />
-                      高级参数
+                      <Radio size={16} />
+                      相机采集
                       <ChevronDown size={14} />
                     </summary>
                     <Fields
-                      value={recognition}
-                      onChange={(v) => setRecognition(v as typeof recognition)}
+                      value={scan}
+                      onChange={(v) => setScan(v as typeof scan)}
+                      labels={{
+                        scan_ms: "扫描时长 ms",
+                        exp_us: "曝光 μs",
+                        near: "最近距离 mm",
+                        far: "最远距离 mm",
+                        loose: "散点输出",
+                      }}
                     />
+                    <button
+                      className="secondary full"
+                      disabled={
+                        busy ||
+                        !!active ||
+                        scan.scan_ms < 500 ||
+                        scan.scan_ms > 20000 ||
+                        scan.exp_us < 10 ||
+                        scan.exp_us > 5000 ||
+                        scan.near >= scan.far
+                      }
+                      onClick={() => void task("scan")}
+                    >
+                      {demo ? "模拟采集点云" : "采集点云"}
+                    </button>
                   </details>
-                  <button
-                    className="primary full"
-                    disabled={!fid || busy || !!active}
-                    onClick={() => void task("recognize")}
-                  >
-                    <ScanLine size={17} />
-                    {active ? "任务进行中…" : "开始识别"}
-                  </button>
-                </div>
-                <details className="camera" open={acquisition}>
-                  <summary>
-                    <Radio size={16} />
-                    相机采集
-                    <ChevronDown size={14} />
-                  </summary>
-                  <Fields
-                    value={scan}
-                    onChange={(v) => setScan(v as typeof scan)}
-                    labels={{
-                      scan_ms: "扫描时长 ms",
-                      exp_us: "曝光 μs",
-                      near: "最近距离 mm",
-                      far: "最远距离 mm",
-                      loose: "散点输出",
-                    }}
-                  />
-                  <button
-                    className="secondary full"
-                    disabled={
-                      busy ||
-                      !!active ||
-                      scan.scan_ms < 500 ||
-                      scan.scan_ms > 20000 ||
-                      scan.exp_us < 10 ||
-                      scan.exp_us > 5000 ||
-                      scan.near >= scan.far
-                    }
-                    onClick={() => void task("scan")}
-                  >
-                    {demo ? "模拟采集点云" : "采集点云"}
-                  </button>
-                </details>
+                )}
               </>
             )}
             {tab === 1 && (
@@ -1481,6 +1589,14 @@ export default function Workstation() {
                   onChange={(v) => setProgramForm(v as typeof programForm)}
                   labels={{
                     name: "程序名（可留空）",
+                    utool: "工具坐标（UTOOL）",
+                    uframe: "工件坐标（UFRAME）",
+                    inst: "指令类型",
+                    weld_prog: "焊接程序号",
+                    weld_set: "焊接集合",
+                    speed_weld: "焊接速度（cm/min）",
+                    eps: "轨迹精度（mm）",
+                    max_seg: "最大分段长度（mm）",
                     comment: "备注（≤60字符）",
                     weld: "包含焊接指令",
                     wpr: "姿态 W,P,R（度）",
@@ -1496,55 +1612,6 @@ export default function Workstation() {
                   <FileCode2 size={16} />
                   {demo ? "生成演示程序" : "生成 .LS 程序"}
                 </button>
-                {hasProgram && (
-                  <>
-                    <div className="section-divider" />
-                    {program.issues?.map((issue, i) => (
-                      <div key={i} className="warning">
-                        提示（不阻断）：
-                        {typeof issue === "string"
-                          ? issue
-                          : JSON.stringify(issue)}
-                      </div>
-                    ))}
-                    <div className="code-header">
-                      <strong>{program.ls_name}</strong>
-                      <button
-                        onClick={() =>
-                          navigator.clipboard
-                            .writeText(program.ls_text)
-                            .then(() => notify("程序已复制"))
-                            .catch(fail)
-                        }
-                      >
-                        复制
-                      </button>
-                      <a
-                        href={
-                          "/api/program/" +
-                          encodeURIComponent(
-                            program.ls_name.replace(/\.ls$/i, ""),
-                          ) +
-                          "/download"
-                        }
-                        download={demo ? "DEMO_ONLY.demo.txt" : undefined}
-                        onClick={(e) => {
-                          e.preventDefault();
-                          void downloadProgram(program);
-                        }}
-                      >
-                        <Download size={15} />
-                        下载
-                      </a>
-                    </div>
-                    <pre className="program-code">{program.ls_text}</pre>
-                    {calib.uncalibrated && (
-                      <div className="warning danger-box">
-                        禁止上机：当前程序使用相机系坐标。
-                      </div>
-                    )}
-                  </>
-                )}
               </>
             )}
             {tab === 4 && (
@@ -1609,40 +1676,26 @@ export default function Workstation() {
         <section
           className={"viewport " + (tab === 4 ? "transfer-viewport" : "")}
         >
-          {tab === 4 && (
-            <div className="transfer-main">
-              <h3>程序传输</h3>
-              <div className="transfer-file">
-                <FileCode2 size={28} />
-                <h2>{hasProgram ? program.ls_name : "尚未生成程序"}</h2>
-                <p>
-                  FANUC ASCII 程序 /{" "}
-                  {hasProgram
-                    ? new TextEncoder().encode(program.ls_text).length
-                    : 0}{" "}
-                  字节
-                </p>
+          <div className="viewport-heading">
+            {" "}
+            <div className="workspace-function">
+              <div className="function-icon" aria-hidden="true">
+                <PageIcon size={28} strokeWidth={1.8} />
               </div>
-              <h2 className="teal-heading">
-                {transfer
-                  ? demo
-                    ? "模拟完成，未发送文件"
-                    : "文件传输完成"
-                  : "等待文件传输"}
-              </h2>
-              <div
-                className={"transfer-progress " + (transfer ? "complete" : "")}
-              />
-              <p>
-                {transfer
-                  ? `${transfer.bytes} 字节 · ${transfer.remote_path}`
-                  : "请确认左侧连接参数，点击下发后进行二次确认。"}
-              </p>
-              <div className="warning">
-                文件传输成功不代表机器人已开始焊接。本系统不会启动机器人。
+              <div className="function-heading">
+                <div className="function-title-line">
+                  <h1>{pageTitle}</h1>
+                  <span
+                    className="function-number"
+                    aria-label={`第 ${pageNumber} 个功能`}
+                  >
+                    {String(pageNumber).padStart(2, "0")}
+                  </span>
+                </div>
+                <p className="function-purpose">{pagePurpose}</p>
               </div>
             </div>
-          )}
+          </div>
           <div className="view-toolbar">
             <div>
               <Layers size={17} />
@@ -1670,6 +1723,7 @@ export default function Workstation() {
                 {focusView ? "恢复面板" : "展开演示区"}
               </button>
               {[
+                ["raw", "点云"],
                 ["semantic", "语义"],
                 ["instance", "实例"],
               ].map(([v, label]) => (
@@ -1696,6 +1750,12 @@ export default function Workstation() {
             light={!dark}
             calculation={process.operation}
             motionPaused={process.paused}
+            grid={grid}
+            calibrationPairs={
+              tab === 1 && pairs.some((row) => row.some((value) => value !== 0))
+                ? pairs
+                : undefined
+            }
           />
           {process.operation?.status === "running" && (
             <div
@@ -1751,12 +1811,22 @@ export default function Workstation() {
               />
               <span>{size}</span>
             </label>
+            <button
+              className="grid-toggle"
+              aria-label="网格"
+              title="显示或隐藏网格"
+              aria-pressed={grid}
+              onClick={() => setGrid(!grid)}
+            >
+              <Grid3X3 size={15} />
+            </button>
             <button onClick={() => setReset(reset + 1)}>
               <RotateCcw size={15} />
               重置视角
             </button>
           </div>
           <div className="legend">
+            <strong>语义标注</strong>
             <span>
               <i style={{ background: "#4682e6" }} />
               钢管
@@ -1783,6 +1853,51 @@ export default function Workstation() {
             <span>{cloud?.header.n_instances ?? 0} 个实例</span>
             <span>{cloud?.header.source ?? "—"}</span>
           </div>
+          {tab === 4 && (
+            <section className="transfer-main">
+              <h3>
+                <FileCode2 size={17} />
+                文件信息与传输结果
+              </h3>
+              <div className="transfer-file">
+                <small>待发送文件</small>
+                <h2>{hasProgram ? program.ls_name : "尚未生成程序"}</h2>
+                <p>
+                  {hasProgram
+                    ? new TextEncoder().encode(program.ls_text).length
+                    : 0}{" "}
+                  字节 · {fid || "未选择帧"}
+                </p>
+                <p>{demo ? "演示文本，不可执行" : "FANUC ASCII 程序"}</p>
+              </div>
+              <div className="transfer-result">
+                <h2 className="teal-heading">
+                  {transfer
+                    ? demo
+                      ? "模拟完成，未发送文件"
+                      : "文件传输完成"
+                    : "等待文件传输"}
+                </h2>
+                <div
+                  className={
+                    "transfer-progress " +
+                    (transfer
+                      ? "complete"
+                      : process.operation?.kind === "transfer" &&
+                          process.operation.status === "running"
+                        ? "transferring"
+                        : "")
+                  }
+                />
+                <p>
+                  {transfer
+                    ? `${transfer.bytes} 字节 · ${transfer.remote_path}`
+                    : "请先生成程序，再确认下发。"}
+                </p>
+                <small>只传输文件，不启动机器人</small>
+              </div>
+            </section>
+          )}
         </section>
         <aside className="context-panel">
           <div className="panel-title">
@@ -1792,10 +1907,12 @@ export default function Workstation() {
               : tab === 1
                 ? "标定结果"
                 : tab === 3
-                  ? "TCP 实时信息"
+                  ? "程序预览"
                   : tab === 4
-                    ? "传输结果"
-                    : "焊缝结果"}
+                    ? "上下文信息"
+                    : tab === 2
+                      ? "焊缝几何详情"
+                      : "识别结果"}
             <span>
               {!acquisition && tab === 0 ? `${visibleSeams.length} 条` : ""}
             </span>
@@ -1812,6 +1929,12 @@ export default function Workstation() {
                     <small>点云总数</small>
                     <strong>{cloud?.header.n.toLocaleString() ?? "—"}</strong>
                   </div>
+                  {!acquisition && (
+                    <div>
+                      <small>实例数</small>
+                      <strong>{cloud?.header.n_instances ?? "—"}</strong>
+                    </div>
+                  )}
                 </div>
               )}
               {contextContent}

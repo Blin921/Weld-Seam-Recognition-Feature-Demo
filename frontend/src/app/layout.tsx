@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./industrial.css";
+import "./pdf-reference.css";
 import WorkspaceShell from "@/components/WorkspaceShell";
 export const metadata: Metadata = {
   title: "焊缝识别系统 · 三维视觉工作站",

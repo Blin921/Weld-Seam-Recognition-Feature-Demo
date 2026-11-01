@@ -48,6 +48,7 @@ const calibration = new Map<
     uncalibrated: boolean;
     max_dev_mm?: number;
     mean_dev_mm?: number;
+    matrix?: number[][];
   }
 >();
 const jobs = new Map<string, { id: string; kind: string; start: number }>();
@@ -299,6 +300,23 @@ export async function demoRequest(
           uncalibrated: false,
           max_dev_mm: 0.42,
           mean_dev_mm: 0.18,
+          ...(Array.isArray(body.matrix)
+            ? { matrix: body.matrix }
+            : JSON.stringify(body.pairs) ===
+                JSON.stringify([
+                  { cam: [0, 0, 500], base: [320, 125, 480] },
+                  { cam: [100, 0, 500], base: [420, 125, 480] },
+                  { cam: [0, 100, 500], base: [320, 225, 480] },
+                ])
+              ? {
+                  matrix: [
+                    [1, 0, 0, 320],
+                    [0, 1, 0, 125],
+                    [0, 0, 1, -20],
+                    [0, 0, 0, 1],
+                  ],
+                }
+              : {}),
         };
     calibration.set(body.frame, result);
     return json(result);

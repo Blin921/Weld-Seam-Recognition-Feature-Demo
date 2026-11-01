@@ -5,13 +5,13 @@ const pairs = [
   [100, 0, 500, 420, 125, 480],
   [0, 100, 500, 320, 225, 480],
 ];
-test("real calibration hides coefficients until requested and preserves the request contract", async ({
+test("reference calibration shows the point form and preserves the request contract", async ({
   page,
 }) => {
   const state = await mockBackend(page);
   await page.goto("/calibration");
   await expect(page.locator(".view-status")).toContainText("A");
-  await expect(page.locator(".pair-grid input").first()).not.toBeVisible();
+  await expect(page.locator(".pair-grid input").first()).toBeVisible();
   await expect(page.locator(".calibration-results")).toContainText("等待标定");
   const canvas = await page.locator(".cloud-canvas canvas").elementHandle(),
     before = await page.locator(".viewport").boundingBox();
@@ -62,7 +62,7 @@ test("demo calibration is one click, with sample precision and the original cent
   await page.setViewportSize({ width: 1366, height: 768 });
   await page.goto("/calibration");
   await expect(page.locator(".view-status")).toContainText("DEMO_PIPE_A");
-  await expect(page.locator(".pair-grid input").first()).not.toBeVisible();
+  await expect(page.locator(".pair-grid input").first()).toBeVisible();
   await page.getByRole("button", { name: "开始演示标定", exact: true }).click();
   await expect(page.locator(".calibration-results")).toContainText(
     "模拟标定已完成",
@@ -76,7 +76,7 @@ test("demo calibration is one click, with sample precision and the original cent
   await expect(
     page.getByRole("button", { name: "重新演示标定", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".pair-grid input").first()).not.toBeVisible();
+  await expect(page.locator(".pair-grid input").first()).toBeVisible();
   await expect(
     page
       .locator(".calibration-results")
@@ -86,7 +86,6 @@ test("demo calibration is one click, with sample precision and the original cent
     path: "test-results/calibration-presentation.png",
     fullPage: true,
   });
-  await page.getByText("高级调试 · 点对与矩阵", { exact: true }).click();
   await page.getByRole("button", { name: "清除当前帧标定" }).click();
   await expect(page.getByRole("dialog")).toContainText("清除");
   await page.getByRole("button", { name: "确认继续" }).click();

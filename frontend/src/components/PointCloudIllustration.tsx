@@ -1,49 +1,67 @@
+"use client";
+import { useMemo, useState } from "react";
+import { RotateCcw } from "lucide-react";
+import CloudView from "./CloudView";
+import { demoCloud, demoSeams } from "@/lib/demo";
+import { parseCloud, type Vec } from "@/lib/core";
+import { useTheme } from "@/lib/useTheme";
+const empty: Vec[] = [];
 export default function PointCloudIllustration() {
+  const cloud = useMemo(() => parseCloud(demoCloud("DEMO_PIPE_A")), []);
+  const seams = useMemo(() => demoSeams("DEMO_PIPE_A"), []);
+  const [mode, setMode] = useState("semantic"),
+    [size, setSize] = useState(2),
+    [reset, setReset] = useState(0);
+  const [dark] = useTheme();
   return (
     <div className="hero-cloud">
-      <span>
-        ● 工件点云　 — 焊缝 S-001 <small>示意图</small>
-      </span>
-      <svg viewBox="0 0 710 342" role="img" aria-label="点云与焊缝轨迹示意图">
-        <g stroke="#d3e2ee" strokeWidth=".8">
-          {Array.from({ length: 15 }, (_, i) => (
-            <line
-              key={"h" + i}
-              x1="0"
-              y1={150 + i * 17}
-              x2="580"
-              y2={150 + i * 17}
-            />
+      <CloudView
+        cloud={cloud}
+        seams={seams}
+        selected={1}
+        mode={mode}
+        size={size}
+        reset={reset}
+        points={empty}
+        wpr={empty}
+        distance={0}
+        light={!dark}
+      />
+      <div className="hero-view-tools">
+        <div>
+          {[
+            ["semantic", "语义"],
+            ["instance", "实例"],
+          ].map(([value, label]) => (
+            <button
+              key={value}
+              className={mode === value ? "active" : ""}
+              onClick={() => setMode(value)}
+            >
+              {label}
+            </button>
           ))}
-          {Array.from({ length: 17 }, (_, i) => (
-            <line key={"v" + i} x1="295" y1="95" x2={-200 + i * 65} y2="370" />
-          ))}
-        </g>
-        <g fill="#3688ae">
-          {Array.from({ length: 24 }, (_, row) =>
-            Array.from({ length: 24 }, (_, col) => {
-              const x = 145 + col * 11 + (row - 12) * 4,
-                y = 110 + row * 5 + col * 3 + Math.sin(col * 0.35) * row * 1.7;
-              return (
-                <circle
-                  key={`${row}-${col}`}
-                  cx={x}
-                  cy={y}
-                  r={0.7 + ((row + col) % 3) * 0.2}
-                  opacity={0.45 + (row % 4) * 0.14}
-                />
-              );
-            }),
-          )}
-        </g>
-        <path
-          d="M145 205 L410 290"
-          stroke="#008d81"
-          strokeWidth="3"
-          fill="none"
-        />
-      </svg>
-      <small>左键旋转 · 滚轮缩放 · 右键平移（功能页支持）</small>
+        </div>
+        <label>
+          点大小
+          <input
+            aria-label="首页点大小"
+            type="range"
+            min={1}
+            max={6}
+            value={size}
+            onChange={(event) => setSize(Number(event.target.value))}
+          />
+          <span>{size}</span>
+        </label>
+        <button onClick={() => setReset((value) => value + 1)}>
+          <RotateCcw size={14} />
+          重置视角
+        </button>
+      </div>
+      <small className="hero-cloud-caption">
+        合成示例点云 · 左键旋转 / 滚轮缩放 / 右键平移
+      </small>
     </div>
   );
 }
