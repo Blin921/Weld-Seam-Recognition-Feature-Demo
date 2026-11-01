@@ -18,6 +18,8 @@ export function setDemoMode(enabled: boolean) {
       calibration.clear();
       jobs.clear();
       generated.clear();
+      for (const id of importedTemplates.keys()) blobs.delete(id);
+      importedTemplates.clear();
       frames.splice(2);
     }
   } else sessionStorage.removeItem(key);
@@ -51,8 +53,14 @@ const calibration = new Map<
 const jobs = new Map<string, { id: string; kind: string; start: number }>();
 const generated = new Map<string, { seam_id: number; frame: string }>();
 const blobs = new Map<string, ArrayBuffer>();
+const importedTemplates = new Map<string, string>();
+export const demoPcdFrames = ["DEMO_PIPE_A", "DEMO_PIPE_B"] as const;
+const pcdFiles = new Map<string, string>();
+function frameOffset(frame: string) {
+  return (importedTemplates.get(frame) ?? frame).endsWith("B") ? 20 : 0;
+}
 export function demoSeams(frame: string): Seam[] {
-  const offset = frame.endsWith("B") ? 20 : 0;
+  const offset = frameOffset(frame);
   return [-70, 70]
     .map((y, i) => ({
       id: i + 1,
@@ -83,7 +91,7 @@ export function demoCloud(frame: string): ArrayBuffer {
   const values: number[] = [],
     colors: number[] = [],
     ids: number[] = [];
-  const offset = frame.endsWith("B") ? 20 : 0;
+  const offset = frameOffset(frame);
   const add = (x: number, y: number, z: number, rgb: number[], id: number) => {
     values.push(x, y, z + offset);
     colors.push(...rgb);
@@ -151,6 +159,43 @@ export function demoCloud(frame: string): ArrayBuffer {
   blobs.set(frame, buffer);
   return buffer;
 }
+// Standard PCD v0.7 ASCII, in millimetres. Export the exact built-in cloud.
+export function demoPcd(frame: string): string {
+  if (!demoPcdFrames.some((id) => id === frame))
+    throw new Error("仅支持导出配套演示帧");
+  const cached = pcdFiles.get(frame);
+  if (cached) return cached;
+  const buffer = demoCloud(frame);
+  const headerSize = new DataView(buffer).getUint32(0, true);
+  const header = JSON.parse(
+    new TextDecoder().decode(new Uint8Array(buffer, 4, headerSize)),
+  );
+  const xyz = new Float32Array(buffer, header.offsets.xyz, header.n * 3);
+  const rgb = new Uint8Array(buffer, header.offsets.rgb, header.n * 3);
+  const lines = [
+    "# .PCD v0.7 - Point Cloud Data file format",
+    "# WELD VISION synthetic demonstration; units: mm; not measured scanner data",
+    `# Frame: ${frame}`,
+    "VERSION 0.7",
+    "FIELDS x y z rgb",
+    "SIZE 4 4 4 4",
+    "TYPE F F F U",
+    "COUNT 1 1 1 1",
+    `WIDTH ${header.n}`,
+    "HEIGHT 1",
+    "VIEWPOINT 0 0 0 1 0 0 0",
+    `POINTS ${header.n}`,
+    "DATA ascii",
+  ];
+  for (let i = 0; i < header.n; i++) {
+    const j = i * 3;
+    const color = (rgb[j] << 16) | (rgb[j + 1] << 8) | rgb[j + 2];
+    lines.push(`${xyz[j]} ${xyz[j + 1]} ${xyz[j + 2]} ${color}`);
+  }
+  const result = lines.join("\n") + "\n";
+  pcdFiles.set(frame, result);
+  return result;
+}
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -162,6 +207,43 @@ export async function demoRequest(
   init: RequestInit = {},
 ): Promise<Response> {
   if (init.signal?.aborted) throw new DOMException("Aborted", "AbortError");
+  if (path.startsWith("/frames/") && init.method === "PUT") {
+    if (!(init.body instanceof Blob))
+      return json({ detail: "请选择配套的演示 PCD 文件" }, 400);
+    if (init.body.size > 8 * 1024 * 1024)
+      return json(
+        { detail: "离线演示文件上限为 8MB；真实大点云需接入后端上传" },
+        413,
+      );
+    const text = (await init.body.text()).replace(/\r\n/g, "\n");
+    const template = demoPcdFrames.find((id) => text === demoPcd(id));
+    if (!template)
+      return json(
+        {
+          detail:
+            "当前演示仅支持配套的 DEMO_PIPE_A.pcd / DEMO_PIPE_B.pcd；其他点云需连接真实后端",
+        },
+        400,
+      );
+    const id = decodeURIComponent(path.slice("/frames/".length));
+    if (!id.startsWith("UPLOAD_") || new TextEncoder().encode(id).length > 256)
+      return json({ detail: "演示上传文件名过长或无效" }, 400);
+    importedTemplates.set(id, template);
+    blobs.delete(id);
+    calibration.delete(id);
+    generated.delete(id);
+    const frame: Frame = {
+      id,
+      source: "upload",
+      bytes: init.body.size,
+      mtime: Date.now() / 1000,
+      has_artifacts: true,
+    };
+    const index = frames.findIndex((f) => f.id === id);
+    if (index < 0) frames.push(frame);
+    else frames[index] = frame;
+    return json({ id, bytes: frame.bytes, demo: true });
+  }
   const body = typeof init.body === "string" ? JSON.parse(init.body) : {};
   if (path === "/health")
     return json({
@@ -172,7 +254,10 @@ export async function demoRequest(
     });
   if (path === "/frames")
     return json({
-      frames: frames.map((f) => ({ ...f, bytes: demoCloud(f.id).byteLength })),
+      frames: frames.map((f) => ({
+        ...f,
+        bytes: f.source === "upload" ? f.bytes : demoCloud(f.id).byteLength,
+      })),
     });
   const fid = decodeURIComponent(path.split("/").at(-1) ?? "");
   if (path.startsWith("/view/"))

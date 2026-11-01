@@ -126,3 +126,48 @@ test("all function routes open and refresh directly from the same offline file",
     await expect(page.locator(".view-status")).toContainText("DEMO_PIPE_A");
   }
 });
+
+test("offline upload imports the supplied PCD files, shows their geometry and rejects unrelated files", async ({
+  page,
+  context,
+}) => {
+  await context.setOffline(true);
+  const network: string[] = [];
+  page.on("request", (request) => {
+    if (/^https?:/.test(request.url())) network.push(request.url());
+  });
+  await page.goto(pathToFileURL(file).href + "#/scan");
+  const input = page.locator(".upload input");
+  await expect(input).toBeEnabled();
+  await input.setInputFiles({
+    name: "unknown.pcd",
+    mimeType: "application/octet-stream",
+    buffer: Buffer.from("not a cloud"),
+  });
+  await expect(page.getByRole("status")).toContainText("仅支持配套");
+  await expect(page.locator(".frame-list button")).toHaveCount(2);
+  for (const frame of ["DEMO_PIPE_A", "DEMO_PIPE_B"]) {
+    await input.setInputFiles(path.resolve(`../demo/data/${frame}.pcd`));
+    await expect(page.locator(".view-status")).toContainText(`UPLOAD_${frame}`);
+    await expect(page.locator(".view-status")).toContainText("66,080");
+    await expect(page.getByRole("status")).toContainText("未上传服务器");
+    await expect(page.locator(".frame-list .chosen")).toContainText("upload");
+  }
+  await expect(page.locator(".frame-list button")).toHaveCount(4);
+  await input.setInputFiles(path.resolve("../demo/data/DEMO_PIPE_B.pcd"));
+  await expect(page.locator(".frame-list button")).toHaveCount(4);
+  await page
+    .locator(".steps")
+    .getByRole("button", { name: "AI焊缝识别", exact: true })
+    .click();
+  await expect(page.locator(".seam-card")).toHaveCount(3);
+  await expect(page.locator(".viewport canvas")).toBeVisible();
+  await page.getByRole("button", { name: "开始识别", exact: true }).click();
+  await page.getByRole("button", { name: /任务中心/ }).click();
+  await expect(page.locator(".task-history")).toContainText("未执行真实推理");
+  await page.getByRole("button", { name: /任务中心/ }).click();
+  await page.screenshot({ path: "test-results/offline-upload.png" });
+  expect(network).toEqual([]);
+  await page.reload();
+  await expect(page.locator(".frame-list button")).toHaveCount(2);
+});

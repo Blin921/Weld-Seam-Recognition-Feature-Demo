@@ -524,15 +524,21 @@ export default function Workstation() {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".pcd"))
       return notify("请选择 .pcd 点云文件");
+    if (demo && file.size > 8 * 1024 * 1024)
+      return notify("离线演示文件上限为 8MB；真实大点云需接入后端上传");
     if (file.size > 300 * 1024 * 1024) return notify("文件超过 300MB 上限");
     setBusy(true);
     try {
-      const id = file.name.replace(/\.pcd$/i, "");
+      const id = (demo ? "UPLOAD_" : "") + file.name.replace(/\.pcd$/i, "");
       await api("/frames/" + encodeURIComponent(id), file, "PUT");
       await refreshFrames();
       if (fid === id) await loadFrame(id, true);
       else setFid(id);
-      notify("点云上传成功");
+      notify(
+        demo
+          ? "演示点云已导入本地，未上传服务器；识别使用配套示例结果"
+          : "点云上传成功",
+      );
     } catch (e) {
       fail(e);
     } finally {
@@ -1124,16 +1130,16 @@ export default function Workstation() {
                 </h3>
                 <label className="upload">
                   <CloudUpload size={24} />
-                  <strong>{demo ? "演示使用内置点云" : "上传点云文件"}</strong>
+                  <strong>{demo ? "上传演示点云" : "上传点云文件"}</strong>
                   <small>
                     {demo
-                      ? "演示使用预置数据，退出演示后可上传真实文件"
+                      ? "配套 DEMO_PIPE_A / B.pcd · 仅在本地导入 · 最大 8 MB"
                       : "PCD 格式 · 最大 300 MB"}
                   </small>
                   <input
                     type="file"
                     accept=".pcd"
-                    disabled={demo || busy || !!active}
+                    disabled={busy || !!active}
                     onChange={(e) => void upload(e.target.files?.[0])}
                   />
                 </label>
