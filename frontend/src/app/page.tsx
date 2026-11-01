@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import DemoEntry from "@/components/DemoEntry";
 import SiteHeader from "@/components/SiteHeader";
+import SystemInfoButton from "@/components/SystemInfoButton";
 import PointCloudIllustration from "@/components/PointCloudIllustration";
 const features = [
   {
@@ -97,13 +98,9 @@ export default function Home() {
           WELD VISION ·
           首页点云为示意图；演示模式使用合成数据，真实模式以后端响应为准。系统不启动机器人。
         </p>
-        <details id="architecture" className="architecture">
-          <summary>技术架构与部署说明</summary>
-          <p>
-            浏览器 → Next.js（3000）→ 同源 /api 代理 → FastAPI（8000）→ 相机 /
-            C++ 解算器 / 控制器。可复用历史产物完成离线演示。
-          </p>
-        </details>
+        <SystemInfoButton topic="architecture" className="architecture">
+          技术架构与部署说明
+        </SystemInfoButton>
       </footer>
     </main>
   );
