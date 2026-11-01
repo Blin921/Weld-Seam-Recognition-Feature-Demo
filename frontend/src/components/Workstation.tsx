@@ -2,7 +2,6 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import SiteHeader from "./SiteHeader";
 import { requestApi } from "@/lib/transport";
 import { useDemoMode } from "@/lib/useDemoMode";
 import { setDemoMode, isDemoMode } from "@/lib/demo";
@@ -140,6 +139,14 @@ export default function Workstation() {
   const tab = Math.max(0, routes.indexOf(pathname));
   const acquisition = pathname === "/scan";
   const demo = useDemoMode();
+  const [focusView, setFocusView] = useState(false);
+  useEffect(() => {
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFocusView(false);
+    };
+    window.addEventListener("keydown", escape);
+    return () => window.removeEventListener("keydown", escape);
+  }, []);
   const compact = useCompactLayout();
   const [panelChoice, setPanelChoice] = useState({
     path: pathname,
@@ -876,30 +883,46 @@ export default function Workstation() {
     </div>
   );
   return (
-    <main className={dark ? "workstation dark" : "workstation"}>
-      <SiteHeader />
-      {demo && (
-        <section className="demo-banner">
-          <div>
-            <strong>演示模式 · 合成示例数据</strong>
-            <p>
-              无需后端，可体验识别、标定展示与轨迹预演。无真实推理、无真实标定；模拟下发不会连接设备。
-            </p>
-          </div>
-          <button
-            disabled={!!active || busy}
-            onClick={() => {
-              setDemoMode(false);
-              router.push("/recognize");
-            }}
-          >
-            退出演示，连接后端
-          </button>
-        </section>
-      )}
-      <div className="page-heading">
-        <Link href="/">← 返回首页 / 功能中心</Link>
+    <main
+      className={
+        (dark ? "workstation dark" : "workstation") +
+        (focusView && tab !== 4 ? " presentation" : "")
+      }
+    >
+      <div className="workspace-topbar">
+        <Link href="/" className="site-logo workspace-brand" title="返回首页">
+          ◈ WELD VISION
+        </Link>
+        <span className="topbar-divider" aria-hidden="true" />
         <h1>{pageTitle}</h1>
+        {demo && (
+          <div className="demo-banner">
+            <strong>演示模式 · 合成示例数据</strong>
+          </div>
+        )}
+        <div className="workspace-actions">
+          {demo && (
+            <details className="workspace-help">
+              <summary>演示说明</summary>
+              <div>
+                使用合成点云与示例轨迹，无真实推理、无真实标定。模拟下发不会连接设备，下载的演示文本不可用于机器人。
+              </div>
+            </details>
+          )}
+          {demo && (
+            <button
+              className="exit-demo"
+              disabled={!!active || busy}
+              onClick={() => {
+                setDemoMode(false);
+                router.push("/recognize");
+              }}
+            >
+              退出演示，连接后端
+            </button>
+          )}
+          <Link href="/">返回首页</Link>
+        </div>
       </div>
       <div className="status-strip">
         {" "}
@@ -1474,6 +1497,14 @@ export default function Workstation() {
               实时视图
             </div>
             <div className="view-switch">
+              <button
+                className="focus-toggle"
+                aria-pressed={focusView}
+                title="展开演示区，按 Esc 可恢复"
+                onClick={() => setFocusView(!focusView)}
+              >
+                {focusView ? "恢复面板" : "展开演示区"}
+              </button>
               {[
                 ["semantic", "语义"],
                 ["instance", "实例"],

@@ -301,3 +301,35 @@ test("workspace fits the viewport on all routes, including demo and open logs", 
     fullPage: true,
   });
 });
+
+test("compact demo header leaves most of a 1366x768 screen for the workspace", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("weld-vision-demo", "1"),
+  );
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.goto("/recognize");
+  await expect(page.locator(".view-status")).toContainText("DEMO_PIPE_A");
+  const bounds = await page.locator(".viewport").boundingBox();
+  expect(bounds!.y).toBeLessThanOrEqual(100);
+  expect(bounds!.height).toBeGreaterThanOrEqual(570);
+  await expect(
+    page.getByRole("button", { name: "退出演示，连接后端" }),
+  ).toBeVisible();
+  await expect(page.locator(".health")).toContainText("演示未标定");
+  await page.getByText("演示说明", { exact: true }).click();
+  await expect(page.locator(".workspace-help>div")).toBeVisible();
+  await page.getByText("演示说明", { exact: true }).click();
+  await page.getByRole("button", { name: "展开演示区", exact: true }).click();
+  await expect(page.locator(".control-panel")).not.toBeVisible();
+  expect(
+    (await page.locator(".viewport").boundingBox())!.width,
+  ).toBeGreaterThan(1300);
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".control-panel")).toBeVisible();
+  await page.screenshot({
+    path: "test-results/compact-workspace-1366.png",
+    fullPage: true,
+  });
+});
