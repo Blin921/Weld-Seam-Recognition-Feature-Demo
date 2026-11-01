@@ -316,8 +316,8 @@ test("compact demo header leaves most of a 1366x768 screen for the workspace", a
   await page.goto("/recognize");
   await expect(page.locator(".view-status")).toContainText("DEMO_PIPE_A");
   const bounds = await page.locator(".viewport").boundingBox();
-  expect(bounds!.y).toBeLessThanOrEqual(100);
-  expect(bounds!.height).toBeGreaterThanOrEqual(570);
+  expect(bounds!.y).toBeLessThanOrEqual(130);
+  expect(bounds!.height).toBeGreaterThanOrEqual(550);
   await expect(
     page.getByRole("button", { name: "退出演示，连接后端" }),
   ).toBeVisible();

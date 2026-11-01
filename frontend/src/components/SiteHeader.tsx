@@ -1,12 +1,13 @@
 import Link from "next/link";
+import SystemLogo from "./SystemLogo";
 import SystemInfoButton from "./SystemInfoButton";
 export default function SiteHeader() {
   return (
     <header className="site-header">
       <Link href="/" className="site-logo">
-        <span>◈</span> WELD VISION
+        <SystemLogo /> 焊缝识别系统
       </Link>
-      <span className="site-subtitle">智能焊接视觉系统</span>
+      <span className="site-subtitle">三维视觉 · 轨迹规划</span>
       <nav>
         <Link href="/">首页</Link>
         <Link href="/#features">功能中心</Link>

@@ -6,6 +6,7 @@ import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { Cloud, Seam, Vec, displayPoint, samplePath } from "@/lib/core";
+import type { Calculation } from "@/lib/calculation";
 type Props = {
   cloud: Cloud | null;
   seams: Seam[];
@@ -17,6 +18,8 @@ type Props = {
   wpr: Vec[];
   distance: number;
   light?: boolean;
+  calculation?: Calculation | null;
+  motionPaused?: boolean;
 };
 type Runtime = {
   scene: THREE.Scene;
@@ -28,7 +31,10 @@ type Runtime = {
   helpers: THREE.Group;
   tcp: THREE.Group;
   trail: THREE.Line;
+  scan: THREE.Group;
+  probe: THREE.Mesh;
   span: number;
+  center: Vec;
   trailScratch: number | null;
   seamObjects: Map<number, { line: Line2; waypoints: THREE.Group }>;
 };
@@ -61,6 +67,20 @@ function spanOf(cloud: Cloud | null) {
 export default function CloudView(p: Props) {
   const host = useRef<HTMLDivElement>(null),
     runtime = useRef<Runtime | null>(null);
+  const animation = useRef({
+    operation: p.calculation,
+    paused: p.motionPaused,
+    trajectory:
+      p.seams.find((seam) => seam.id === p.selected)?.trajectory_mm ?? [],
+  });
+  useEffect(() => {
+    animation.current = {
+      operation: p.calculation,
+      paused: p.motionPaused,
+      trajectory:
+        p.seams.find((seam) => seam.id === p.selected)?.trajectory_mm ?? [],
+    };
+  }, [p.calculation, p.motionPaused, p.seams, p.selected]);
   const palettes = useMemo(() => {
     const count = p.cloud?.header.n ?? 0,
       semantic = new Float32Array(count * 3),
@@ -121,7 +141,35 @@ export default function CloudView(p: Props) {
       new THREE.LineBasicMaterial({ color: 0xff8d3b }),
     );
     trail.frustumCulled = false;
-    scene.add(cloud, seams, helpers, coordinateGroup, trail);
+    const scan = new THREE.Group();
+    const sheet = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({
+        color: 0xe28a51,
+        transparent: true,
+        opacity: 0.13,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      }),
+    );
+    sheet.rotation.y = Math.PI / 2;
+    const edge = new THREE.LineSegments(
+      new THREE.EdgesGeometry(sheet.geometry),
+      new THREE.LineBasicMaterial({
+        color: 0xe58d50,
+        transparent: true,
+        opacity: 0.85,
+      }),
+    );
+    edge.rotation.y = Math.PI / 2;
+    scan.add(sheet, edge);
+    scan.visible = false;
+    const probe = new THREE.Mesh(
+      new THREE.SphereGeometry(1, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xffa84b }),
+    );
+    probe.visible = false;
+    scene.add(cloud, seams, helpers, coordinateGroup, trail, scan, probe);
     const rt: Runtime = {
       scene,
       camera,
@@ -132,7 +180,10 @@ export default function CloudView(p: Props) {
       helpers,
       tcp,
       trail,
+      scan,
+      probe,
       span: 500,
+      center: [0, 0, 0],
       trailScratch: null,
       seamObjects: new Map(),
     };
@@ -152,10 +203,42 @@ export default function CloudView(p: Props) {
     observer.observe(element);
     resize();
     let raf = 0;
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
     const draw = () => {
       raf = requestAnimationFrame(draw);
       if (drawable && !document.hidden) {
         controls.update();
+        const visual = animation.current;
+        const running = visual.operation?.status === "running";
+        const moving = running && !visual.paused && !reducedMotion.matches;
+        scan.visible =
+          !!running &&
+          ["scan", "recognize", "upload"].includes(visual.operation!.kind);
+        probe.visible =
+          !!running &&
+          ["program", "inspect"].includes(visual.operation!.kind) &&
+          visual.trajectory.length > 0;
+        if (moving) {
+          const position =
+            ((Date.now() - visual.operation!.startedAt) % 2000) / 2000;
+          if (scan.visible)
+            scan.position.x = rt.center[0] + (position - 0.5) * rt.span;
+          if (probe.visible) {
+            const lengths = visual.trajectory.reduce(
+              (sum, point, index, list) =>
+                index
+                  ? sum +
+                    Math.hypot(...point.map((v, j) => v - list[index - 1][j]))
+                  : sum,
+              0,
+            );
+            probe.position.set(
+              ...displayPoint(
+                samplePath(visual.trajectory, position * lengths).point,
+              ),
+            );
+          }
+        }
         renderer.render(scene, camera);
       }
     };
@@ -221,6 +304,7 @@ export default function CloudView(p: Props) {
       : ([0, 0, 0] as Vec);
     const span = spanOf(p.cloud);
     rt.span = span;
+    rt.center = center;
     rt.camera.position.set(
       center[0] + span * 0.9,
       center[1] + span * 0.6,
@@ -230,6 +314,9 @@ export default function CloudView(p: Props) {
     rt.camera.lookAt(...center);
     rt.controls.update();
     rt.tcp.scale.setScalar(span * 0.08);
+    rt.scan.position.set(...center);
+    rt.scan.scale.set(1, span * 0.7, span * 0.7);
+    rt.probe.scale.setScalar(span * 0.012);
   }, [p.cloud, p.reset]);
   // Rebuild only inexpensive helpers when the frame or theme changes; preserve the view.
   useEffect(() => {
@@ -244,8 +331,8 @@ export default function CloudView(p: Props) {
     const grid = new THREE.GridHelper(
       size,
       size / 10,
-      p.light ? 0xc6dbea : 0x334452,
-      p.light ? 0xd5e4ee : 0x1b2834,
+      p.light ? 0xb9c4c8 : 0x394552,
+      p.light ? 0xcfd7d9 : 0x26313c,
     );
     grid.position.set(
       center[0],
@@ -255,7 +342,7 @@ export default function CloudView(p: Props) {
     const axes = new THREE.AxesHelper(span * 0.13);
     axes.position.set(center[0] - span * 0.6, grid.position.y, center[2]);
     rt.helpers.add(grid, axes);
-    rt.scene.background = new THREE.Color(p.light ? "#ecf4f9" : "#0d1218");
+    rt.scene.background = new THREE.Color(p.light ? "#e5ebed" : "#111a23");
   }, [p.cloud, p.light]);
   useEffect(() => {
     const rt = runtime.current;

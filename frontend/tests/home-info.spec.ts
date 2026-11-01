@@ -31,7 +31,7 @@ test("homepage info buttons open readable dialogs, close accessibly, and preserv
     .locator(".site-header")
     .getByRole("button", { name: "关于系统", exact: true })
     .click();
-  const about = page.getByRole("dialog", { name: "关于 WELD VISION" });
+  const about = page.getByRole("dialog", { name: "关于焊缝识别系统" });
   await expect(about).toContainText("只生成与传输文件，不启动机器人");
   await expect(about).toContainText("合成数据");
   await about.getByRole("button", { name: "关闭说明" }).click();
@@ -56,6 +56,6 @@ test("homepage info buttons open readable dialogs, close accessibly, and preserv
     .click();
   await page.mouse.click(5, 5);
   await expect(
-    page.getByRole("dialog", { name: "关于 WELD VISION" }),
+    page.getByRole("dialog", { name: "关于焊缝识别系统" }),
   ).toHaveCount(0);
 });

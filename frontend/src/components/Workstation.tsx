@@ -9,6 +9,14 @@ import { useCompactLayout } from "@/lib/useCompactLayout";
 import { mergeCalibration } from "@/lib/calibration";
 import { CalibrationControls, CalibrationResults } from "./CalibrationPanel";
 import { samplePath } from "@/lib/core";
+import SystemLogo from "./SystemLogo";
+import CalculationProcess from "./CalculationProcess";
+import { useCalculation } from "@/lib/useCalculation";
+import {
+  holdDemoAnimation,
+  type Calculation,
+  type CalculationKind,
+} from "@/lib/calculation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Activity,
@@ -143,6 +151,15 @@ export default function Workstation() {
   const tab = Math.max(0, routes.indexOf(pathname));
   const acquisition = pathname === "/scan";
   const demo = useDemoMode();
+  const process = useCalculation(demo);
+  const { update: updateCalculation, finish: finishCalculation } = process;
+  const taskCalculation = useRef<Calculation | null>(null);
+  const calculationKind: CalculationKind = acquisition
+    ? "scan"
+    : (["recognize", "calibration", "inspect", "program", "transfer"][
+        tab
+      ] as CalculationKind);
+
   const [focusView, setFocusView] = useState(false);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
@@ -249,7 +266,22 @@ export default function Workstation() {
       ? transferResult
       : null;
   function selectSeam(id: number | null) {
-    if (id !== selected) setTransfer(null);
+    if (id !== selected) {
+      setTransfer(null);
+      if (id !== null && !busy && !active) {
+        const calculation = process.begin(
+          "inspect",
+          `定位焊缝 #${id} 并显示已返回的轨迹与属性`,
+        );
+        void holdDemoAnimation(demo, calculation.startedAt, 1800).then(() =>
+          process.finish(
+            calculation,
+            "done",
+            `焊缝 #${id} 已选中；长度与轨迹来自当前识别结果`,
+          ),
+        );
+      }
+    }
     setSelectedId(id);
     setPlaying(false);
     setSeconds(0);
@@ -410,7 +442,16 @@ export default function Workstation() {
         setJobs((old) =>
           [job, ...old.filter((j) => j.id !== job.id)].slice(0, 20),
         );
+        updateCalculation(
+          taskCalculation.current,
+          job.log.at(-1) ?? "等待后台任务结果",
+        );
         if (job.state === "done" || job.state === "error") {
+          finishCalculation(
+            taskCalculation.current,
+            job.state === "error" ? "error" : "done",
+            job.error ?? job.log.at(-1) ?? "任务完成",
+          );
           finished = true;
           setActive(null);
           taskLock.current = false;
@@ -464,7 +505,15 @@ export default function Workstation() {
       document.removeEventListener("visibilitychange", resume);
       window.removeEventListener("online", resume);
     };
-  }, [active, notify, fail, refreshFrames, loadFrame]);
+  }, [
+    active,
+    notify,
+    fail,
+    refreshFrames,
+    loadFrame,
+    updateCalculation,
+    finishCalculation,
+  ]);
   useEffect(() => {
     if (!playing || !program) return;
     let last = performance.now(),
@@ -488,6 +537,12 @@ export default function Workstation() {
   async function task(kind: "scan" | "recognize") {
     if (taskLock.current) return;
     taskLock.current = true;
+    taskCalculation.current = process.begin(
+      kind,
+      demo
+        ? "正在展示配套模拟处理流程"
+        : "任务请求已提交，等待后台报告处理结果",
+    );
     setConnectionIssue(null);
     setBusy(true);
     try {
@@ -515,6 +570,11 @@ export default function Workstation() {
       setActive(job_id);
     } catch (e) {
       taskLock.current = false;
+      process.finish(
+        taskCalculation.current,
+        "error",
+        e instanceof Error ? e.message : "任务提交失败",
+      );
       fail(e);
     } finally {
       setBusy(false);
@@ -527,25 +587,42 @@ export default function Workstation() {
     if (demo && file.size > 8 * 1024 * 1024)
       return notify("离线演示文件上限为 8MB；真实大点云需接入后端上传");
     if (file.size > 300 * 1024 * 1024) return notify("文件超过 300MB 上限");
+    const calculation = process.begin(
+      "upload",
+      demo ? "在浏览器内校验配套 PCD 文件" : "正在上传点云，等待后台确认",
+    );
     setBusy(true);
     try {
       const id = (demo ? "UPLOAD_" : "") + file.name.replace(/\.pcd$/i, "");
       await api("/frames/" + encodeURIComponent(id), file, "PUT");
+      await holdDemoAnimation(demo, calculation.startedAt);
       await refreshFrames();
       if (fid === id) await loadFrame(id, true);
       else setFid(id);
+      process.finish(calculation, "done", `点云 ${id} 已载入三维视图`);
       notify(
         demo
           ? "演示点云已导入本地，未上传服务器；识别使用配套示例结果"
           : "点云上传成功",
       );
     } catch (e) {
+      process.finish(
+        calculation,
+        "error",
+        e instanceof Error ? e.message : "载入失败",
+      );
       fail(e);
     } finally {
       setBusy(false);
     }
   }
   async function saveCalib(clear = false, samplePairs?: number[][]) {
+    const calculation = clear
+      ? null
+      : process.begin(
+          "calibration",
+          demo ? "演示对应点与坐标转换关系" : "已提交标定数据，等待后端求解",
+        );
     setBusy(true);
     try {
       const payload = clear
@@ -566,6 +643,7 @@ export default function Workstation() {
               })),
             };
       const result = await api<Calib>("/calib", payload);
+      if (calculation) await holdDemoAnimation(demo, calculation.startedAt);
       const status: Calib = {
         ...result,
         uncalibrated: clear,
@@ -582,6 +660,11 @@ export default function Workstation() {
       };
       calibrationCache.current.set(fid, status);
       setCalib(status);
+      process.finish(
+        calculation,
+        "done",
+        `标定结果已返回；最大残差 ${result.max_dev_mm ?? "未知"} mm`,
+      );
       setProgram(null);
       setTransfer(null);
       setPlaying(false);
@@ -592,6 +675,11 @@ export default function Workstation() {
           : `标定已保存 · 最大残差 ${result.max_dev_mm ?? "—"} mm`,
       );
     } catch (e) {
+      process.finish(
+        calculation,
+        "error",
+        e instanceof Error ? e.message : "标定失败",
+      );
       fail(e);
     } finally {
       setBusy(false);
@@ -612,6 +700,10 @@ export default function Workstation() {
     )
       return notify("WPR 须为逗号分隔的三个数字");
     if (calib.uncalibrated && !confirmed) return setPending("uncalibrated");
+    const calculation = process.begin(
+      "program",
+      demo ? "根据示例焊缝生成不可执行的演示文本" : "等待后台生成程序与途经点",
+    );
     setBusy(true);
     try {
       const result = await api<Program>("/program", {
@@ -619,7 +711,13 @@ export default function Workstation() {
         seam_id: selected,
         ...programForm,
       });
+      await holdDemoAnimation(demo, calculation.startedAt, 2200);
       setProgram(result);
+      process.finish(
+        calculation,
+        "done",
+        `已返回 ${result.waypoints_cam_mm.length} 个途经点与程序文本`,
+      );
       setTransfer(null);
       setProgramSeam(selected);
       setSeconds(0);
@@ -629,6 +727,11 @@ export default function Workstation() {
           : "程序已生成，仅供预演、下载与文件下发",
       );
     } catch (e) {
+      process.finish(
+        calculation,
+        "error",
+        e instanceof Error ? e.message : "程序生成失败",
+      );
       if (
         e instanceof ApiError &&
         e.status === 400 &&
@@ -670,6 +773,10 @@ export default function Workstation() {
   async function push() {
     if (!program || programSeam !== selected)
       return notify("请先为当前焊缝生成程序");
+    const calculation = process.begin(
+      "transfer",
+      demo ? "模拟传输流程，不连接设备" : "正在请求 FTP 文件传输，等待后台确认",
+    );
     setBusy(true);
     try {
       const result = await api<{
@@ -677,6 +784,14 @@ export default function Workstation() {
         remote_path: string;
         existed_before: boolean;
       }>("/push", { frame: fid, seam_id: selected, ...ftp });
+      await holdDemoAnimation(demo, calculation.startedAt, 2100);
+      process.finish(
+        calculation,
+        "done",
+        demo
+          ? "模拟结束，实际传输 0 字节"
+          : `后台确认已传输 ${result.bytes} 字节`,
+      );
       setTransfer({
         ...result,
         frame: fid,
@@ -691,6 +806,11 @@ export default function Workstation() {
         `${demo ? "模拟完成，未发送文件" : "已下发"} ${result.bytes} 字节 → ${result.remote_path}${result.existed_before ? "；已覆盖控制器同名程序" : ""}`,
       );
     } catch (e) {
+      process.finish(
+        calculation,
+        "error",
+        e instanceof Error ? e.message : "传输失败",
+      );
       fail(e);
     } finally {
       setBusy(false);
@@ -949,6 +1069,35 @@ export default function Workstation() {
       )}
     </div>
   );
+  const processPanel = (
+    <CalculationProcess
+      operation={process.operation}
+      kind={calculationKind}
+      paused={process.paused}
+      onPause={process.togglePaused}
+      onReplay={() => void process.replay(calculationKind)}
+      disabled={busy || !!active || process.operation?.status === "running"}
+    />
+  );
+  const recentLog = (
+    <section className="recent-log" aria-label="最近任务日志">
+      <h3>
+        <Terminal size={15} />
+        任务日志<span>最近记录</span>
+      </h3>
+      <ul>
+        {(events.length
+          ? events.slice(-3).reverse()
+          : ["系统就绪，等待操作"]
+        ).map((event, i) => (
+          <li key={`${i}-${event}`}>
+            <i />
+            {event}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
   return (
     <main
       className={
@@ -958,26 +1107,40 @@ export default function Workstation() {
     >
       <div className="workspace-topbar">
         <Link href="/" className="site-logo workspace-brand" title="返回首页">
-          ◈ WELD VISION
+          <SystemLogo /> <span>焊缝识别系统</span>
         </Link>
-        <span className="topbar-divider" aria-hidden="true" />
-        <div className="workspace-function">
-          <div className="function-icon" aria-hidden="true">
-            <PageIcon size={28} strokeWidth={1.8} />
-          </div>
-          <div className="function-heading">
-            <div className="function-title-line">
-              <h1>{pageTitle}</h1>
-              <span
-                className="function-number"
-                aria-label={`第 ${pageNumber} 个功能`}
-              >
-                {String(pageNumber).padStart(2, "0")}
+        <nav className="steps" aria-label="工作流导航">
+          <Link
+            className={acquisition ? "active" : ""}
+            href="/scan"
+            aria-label="数据采集与管理"
+            aria-current={acquisition ? "page" : undefined}
+          >
+            <span className="workflow-number" aria-hidden="true">
+              01
+            </span>
+            数据采集
+          </Link>
+          {stepNames.map((name, i) => (
+            <button
+              key={name}
+              className={!acquisition && tab === i ? "active" : ""}
+              onClick={() => setTab(i)}
+              aria-label={name}
+              aria-current={!acquisition && tab === i ? "page" : undefined}
+              aria-describedby={"workflow-step-state-" + i}
+            >
+              <span className="workflow-number" aria-hidden="true">
+                {String(i + 2).padStart(2, "0")}
               </span>
-            </div>
-            <p className="function-purpose">{pagePurpose}</p>
-          </div>
-        </div>
+              {name}
+              <span id={"workflow-step-state-" + i} className="sr-only">
+                {stateLabels[stepStates[i] as keyof typeof stateLabels]}
+                {i >= 3 && calib.uncalibrated ? "；未标定，禁止上机" : ""}
+              </span>
+            </button>
+          ))}
+        </nav>
         <div className="workspace-actions">
           {demo && (
             <div className="demo-banner">
@@ -996,20 +1159,38 @@ export default function Workstation() {
           {demo && !isStaticDemo && (
             <button
               className="exit-demo"
+              aria-label="退出演示，连接后端"
               disabled={!!active || busy}
               onClick={() => {
                 setDemoMode(false);
                 router.push("/recognize");
               }}
             >
-              退出演示，连接后端
+              <span aria-hidden="true">连接后端</span>
             </button>
           )}
           <Link href="/">返回首页</Link>
         </div>
       </div>
       <div className="status-strip">
-        {" "}
+        <div className="workspace-function">
+          <div className="function-icon" aria-hidden="true">
+            <PageIcon size={28} strokeWidth={1.8} />
+          </div>
+          <div className="function-heading">
+            <div className="function-title-line">
+              <h1>{pageTitle}</h1>
+              <span
+                className="function-number"
+                aria-label={`第 ${pageNumber} 个功能`}
+              >
+                {String(pageNumber).padStart(2, "0")}
+              </span>
+            </div>
+            <p className="function-purpose">{pagePurpose}</p>
+          </div>
+        </div>
+
         <div className="health">
           <span
             title={health?.model_error ?? "模型健康状态"}
@@ -1417,6 +1598,8 @@ export default function Workstation() {
               className="compact-context"
             >
               {contextContent}
+              {processPanel}
+              {recentLog}
             </div>
           )}
           <div className="panel-bottom">
@@ -1511,7 +1694,26 @@ export default function Workstation() {
             wpr={hasProgram ? program.wpr_list : []}
             distance={distance}
             light={!dark}
+            calculation={process.operation}
+            motionPaused={process.paused}
           />
+          {process.operation?.status === "running" && (
+            <div
+              className="scene-processing"
+              data-paused={process.paused}
+              role="note"
+              aria-label="计算动画状态"
+            >
+              <Activity size={16} />
+              <div>
+                <strong>
+                  {process.operation.demo ? "模拟计算展示" : "后台处理中"}
+                </strong>
+                <span>{process.operation.detail}</span>
+              </div>
+              <i />
+            </div>
+          )}
           {!cloud && (
             <div className="viewport-empty">
               <div className="empty-orbit">
@@ -1598,7 +1800,25 @@ export default function Workstation() {
               {!acquisition && tab === 0 ? `${visibleSeams.length} 条` : ""}
             </span>
           </div>
-          {!compact && contextContent}
+          {!compact && (
+            <>
+              {(acquisition || tab === 0 || tab === 2) && (
+                <div className="result-metrics">
+                  <div>
+                    <small>焊缝数量</small>
+                    <strong>{seams.length}</strong>
+                  </div>
+                  <div>
+                    <small>点云总数</small>
+                    <strong>{cloud?.header.n.toLocaleString() ?? "—"}</strong>
+                  </div>
+                </div>
+              )}
+              {contextContent}
+              {processPanel}
+              {recentLog}
+            </>
+          )}
         </aside>
       </div>
       <section
@@ -1692,38 +1912,17 @@ export default function Workstation() {
           </div>
         )}
       </section>
-      <nav className="steps" aria-label="工作流导航">
-        <Link
-          className={acquisition ? "active" : ""}
-          href="/scan"
-          aria-label="数据采集与管理"
-          aria-current={acquisition ? "page" : undefined}
-        >
-          <span className="workflow-number" aria-hidden="true">
-            01
-          </span>
-          数据采集
-        </Link>
-        {stepNames.map((name, i) => (
-          <button
-            key={name}
-            className={!acquisition && tab === i ? "active" : ""}
-            onClick={() => setTab(i)}
-            aria-label={name}
-            aria-current={!acquisition && tab === i ? "page" : undefined}
-            aria-describedby={"workflow-step-state-" + i}
-          >
-            <span className="workflow-number" aria-hidden="true">
-              {String(i + 2).padStart(2, "0")}
-            </span>
-            {name}
-            <span id={"workflow-step-state-" + i} className="sr-only">
-              {stateLabels[stepStates[i] as keyof typeof stateLabels]}
-              {i >= 3 && calib.uncalibrated ? "；未标定，禁止上机" : ""}
-            </span>
-          </button>
-        ))}
-      </nav>
+
+      <div className="workstation-footnote">
+        <span>
+          <i className={active || busy ? "working" : ""} />
+          {active || busy ? "处理中" : "就绪"}
+        </span>
+        <span>{cloud?.header.n.toLocaleString() ?? 0} 点</span>
+        <span>{fid || "未选择帧"}</span>
+        <span>旋转 / 平移 / 缩放 · 毫米</span>
+        <strong>{demo ? "离线演示 · 合成数据" : "真实模式 · 后台响应"}</strong>
+      </div>
       {toast && (
         <div role="status" className="toast">
           {toast}

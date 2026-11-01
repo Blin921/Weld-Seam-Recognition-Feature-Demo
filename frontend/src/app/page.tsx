@@ -59,7 +59,7 @@ export default function Home() {
             <br />
             规划每一步轨迹
           </h1>
-          <h2>智能焊缝识别与机器人轨迹规划系统</h2>
+          <h2>从三维点云到焊接轨迹的可视化工作站</h2>
           <p>
             基于 3D 点云与人工智能，连接工件识别、焊缝定位、
             <br />
@@ -95,7 +95,7 @@ export default function Home() {
       </section>
       <footer className="home-footer">
         <p className="home-disclaimer" id="about">
-          WELD VISION ·
+          焊缝识别系统 ·
           首页点云为示意图；演示模式使用合成数据，真实模式以后端响应为准。系统不启动机器人。
         </p>
         <SystemInfoButton topic="architecture" className="architecture">

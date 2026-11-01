@@ -51,18 +51,34 @@ test("single HTML opens from disk offline and runs the complete visual demonstra
     .getByRole("button", { name: "坐标标定", exact: true })
     .click();
   await page.getByRole("button", { name: "开始演示标定", exact: true }).click();
+  await expect(page.locator(".calculation-card")).toHaveAttribute(
+    "data-kind",
+    "calibration",
+  );
+  await expect(page.locator(".calculation-card")).toHaveAttribute(
+    "data-state",
+    "running",
+  );
   await expect(page.locator(".health")).toContainText("模拟标定");
   await page
     .locator(".steps")
     .getByRole("button", { name: "程序与预演", exact: true })
     .click();
   await page.getByRole("button", { name: "生成演示程序", exact: true }).click();
+  await expect(page.locator(".calculation-card")).toHaveAttribute(
+    "data-kind",
+    "program",
+  );
+  await expect(page.locator(".calculation-card")).toHaveAttribute(
+    "data-state",
+    "running",
+  );
   await expect(page.locator(".program-code")).toContainText(
     "NOT AN EXECUTABLE",
   );
   const notice = await page.getByRole("status").boundingBox();
   const navigation = await page.locator(".steps").boundingBox();
-  expect(notice!.y + notice!.height).toBeLessThanOrEqual(navigation!.y);
+  expect(notice!.y).toBeGreaterThanOrEqual(navigation!.y + navigation!.height);
   await page.getByLabel("播放", { exact: true }).click();
   await page.getByLabel("暂停", { exact: true }).click();
   const pending = page.waitForEvent("download");
@@ -77,6 +93,14 @@ test("single HTML opens from disk offline and runs the complete visual demonstra
     .click();
   await page.getByRole("button", { name: "模拟下发（不连接设备）" }).click();
   await page.getByRole("button", { name: "确认继续" }).click();
+  await expect(page.locator(".calculation-card")).toHaveAttribute(
+    "data-kind",
+    "transfer",
+  );
+  await expect(page.locator(".calculation-card")).toHaveAttribute(
+    "data-state",
+    "running",
+  );
   await expect(page.locator(".transfer-main")).toContainText(
     "模拟完成，未发送文件",
   );
@@ -120,7 +144,7 @@ test("all function routes open and refresh directly from the same offline file",
       await page
         .locator(".workstation h1")
         .evaluate((heading) => parseFloat(getComputedStyle(heading).fontSize)),
-    ).toBeGreaterThanOrEqual(28);
+    ).toBeGreaterThanOrEqual(22);
     await page.reload();
     await expect(page.locator(".demo-banner")).toBeVisible();
     await expect(page.locator(".view-status")).toContainText("DEMO_PIPE_A");
@@ -170,4 +194,31 @@ test("offline upload imports the supplied PCD files, shows their geometry and re
   expect(network).toEqual([]);
   await page.reload();
   await expect(page.locator(".frame-list button")).toHaveCount(2);
+});
+
+test("offline scan and seam selection show the appropriate calculation animations", async ({
+  page,
+  context,
+}) => {
+  await context.setOffline(true);
+  await page.goto(pathToFileURL(file).href + "#/scan");
+  await page.getByRole("button", { name: "模拟采集点云", exact: true }).click();
+  const process = page.getByRole("region", { name: "计算过程展示" });
+  await expect(process).toHaveAttribute("data-kind", "scan");
+  await expect(process).toHaveAttribute("data-state", "running");
+  await expect(process).toHaveAttribute("data-state", "done", {
+    timeout: 7000,
+  });
+  await page
+    .locator(".steps")
+    .getByRole("button", { name: "焊缝管理", exact: true })
+    .click();
+  await page.locator(".control-panel .seam-title").last().click();
+  await expect(process).toHaveAttribute("data-kind", "inspect");
+  await expect(process).toHaveAttribute("data-state", "done", {
+    timeout: 5000,
+  });
+  await expect(
+    page.locator(".control-panel .seam-card.selected"),
+  ).toContainText("#03");
 });

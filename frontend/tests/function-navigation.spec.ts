@@ -44,14 +44,17 @@ for (const width of [1366, 1920]) {
       ).toHaveCount(0);
       const geometry = await page.evaluate(() => {
         const heading = document
-          .querySelector(".function-heading")!
+          .querySelector(".workspace-brand")!
           .getBoundingClientRect();
         const actions = document
           .querySelector(".workspace-actions")!
           .getBoundingClientRect();
         const nav = document.querySelector(".steps")!;
         return {
-          overlap: heading.right > actions.left,
+          overlap:
+            heading.right > nav.getBoundingClientRect().left ||
+            nav.getBoundingClientRect().right > actions.left,
+          navAtTop: nav.getBoundingClientRect().top < 90,
           fontSize: parseFloat(
             getComputedStyle(document.querySelector("h1")!).fontSize,
           ),
@@ -61,7 +64,8 @@ for (const width of [1366, 1920]) {
       });
       expect(geometry).toEqual({
         overlap: false,
-        fontSize: width === 1366 ? 28 : 32,
+        fontSize: width === 1366 ? 22 : 26,
+        navAtTop: true,
         navOverflow: false,
         pageOverflow: false,
       });
@@ -76,6 +80,6 @@ for (const width of [1366, 1920]) {
     await expect(selected).toBeVisible();
     expect(
       await selected.evaluate((element) => getComputedStyle(element).color),
-    ).toBe("rgb(255, 255, 255)");
+    ).toBe("rgb(255, 194, 154)");
   });
 }

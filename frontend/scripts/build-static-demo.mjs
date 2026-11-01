@@ -25,14 +25,20 @@ const result = await build({
   },
   legalComments: "eof",
 });
-const css = await readFile(path.join(root, "src/app/globals.css"), "utf8");
+const css = (
+  await Promise.all(
+    ["globals.css", "industrial.css"].map((file) =>
+      readFile(path.join(root, "src/app", file), "utf8"),
+    ),
+  )
+).join("\n");
 const js = result.outputFiles[0].text.replace(/<\/script/gi, "<\\/script");
 const html = `<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="description" content="WELD VISION 离线交互演示，内置合成数据，无需安装或联网。">
+<meta name="description" content="焊缝识别系统离线交互演示，内置合成数据，无需安装或联网。">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; connect-src 'none'; worker-src blob:; base-uri 'none'; form-action 'none'">
-<title>WELD VISION · 离线演示</title>
+<title>焊缝识别系统 · 离线演示</title>
 <style>${css}</style></head><body><div id="root"></div>
 <noscript>请使用启用 JavaScript 的 Edge 或 Chrome 浏览器打开本文件。</noscript>
 <script>${js}</script></body></html>`;

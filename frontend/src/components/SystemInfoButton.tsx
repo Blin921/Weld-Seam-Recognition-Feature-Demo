@@ -22,7 +22,7 @@ export default function SystemInfoButton({
     trigger = useRef<HTMLButtonElement>(null),
     titleId = useId();
   const title =
-    topic === "architecture" ? "技术架构与部署说明" : "关于 WELD VISION";
+    topic === "architecture" ? "技术架构与部署说明" : "关于焊缝识别系统";
   return (
     <>
       <button
@@ -46,7 +46,7 @@ export default function SystemInfoButton({
         <div className="system-info-sheet">
           <div className="system-info-heading">
             <div>
-              <span>WELD VISION</span>
+              <span>焊缝识别系统</span>
               <h2 id={titleId}>{title}</h2>
             </div>
             <button
@@ -117,7 +117,7 @@ export default function SystemInfoButton({
             ) : (
               <>
                 <p className="system-info-lead">
-                  WELD VISION
+                  焊缝识别系统
                   是焊缝识别与机器人轨迹规划的可视化展示前端，用于讲解完整业务流程，并为后端联调提供操作界面。
                 </p>
                 <h3>可以展示什么？</h3>
