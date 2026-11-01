@@ -30,8 +30,7 @@ test("offline demo runs the visual workflow without API or controller requests",
     .locator(".steps")
     .getByRole("button", { name: "坐标标定", exact: true })
     .click();
-  await page.getByRole("button", { name: "填入示例点对" }).click();
-  await page.getByRole("button", { name: "保存标定", exact: true }).click();
+  await page.getByRole("button", { name: "开始演示标定", exact: true }).click();
   await expect(page.locator(".health")).toContainText("模拟标定");
   await page
     .locator(".steps")

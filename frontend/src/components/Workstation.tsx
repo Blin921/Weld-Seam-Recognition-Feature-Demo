@@ -7,6 +7,7 @@ import { useDemoMode } from "@/lib/useDemoMode";
 import { setDemoMode, isDemoMode } from "@/lib/demo";
 import { useCompactLayout } from "@/lib/useCompactLayout";
 import { mergeCalibration } from "@/lib/calibration";
+import { CalibrationControls, CalibrationResults } from "./CalibrationPanel";
 import { samplePath } from "@/lib/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -502,12 +503,12 @@ export default function Workstation() {
       setBusy(false);
     }
   }
-  async function saveCalib(clear = false) {
+  async function saveCalib(clear = false, samplePairs?: number[][]) {
     setBusy(true);
     try {
       const payload = clear
         ? { frame: fid, clear: true }
-        : calibMode
+        : calibMode && !samplePairs
           ? {
               frame: fid,
               ...(() => {
@@ -517,13 +518,26 @@ export default function Workstation() {
             }
           : {
               frame: fid,
-              pairs: pairs.map((row) => ({
+              pairs: (samplePairs ?? pairs).map((row) => ({
                 cam: row.slice(0, 3),
                 base: row.slice(3, 6),
               })),
             };
       const result = await api<Calib>("/calib", payload);
-      const status = { ...result, uncalibrated: clear, has_calib: !clear };
+      const status: Calib = {
+        ...result,
+        uncalibrated: clear,
+        has_calib: !clear,
+        pair_count:
+          clear || (!samplePairs && calibMode)
+            ? undefined
+            : (samplePairs ?? pairs).length,
+        input_kind: clear
+          ? undefined
+          : samplePairs || !calibMode
+            ? "pairs"
+            : "matrix",
+      };
       calibrationCache.current.set(fid, status);
       setCalib(status);
       setProgram(null);
@@ -747,31 +761,11 @@ export default function Workstation() {
           </p>
         </>
       ) : tab === 1 ? (
-        <>
-          <h3>标定结果</h3>
-          <h2 className="teal-heading">
-            {calib.uncalibrated
-              ? "尚未标定"
-              : demo
-                ? "✓ 模拟标定已保存"
-                : "✓ 标定已保存"}
-          </h2>
-          <p>标定标签 {calib.calib_tag}</p>
-          <p>最大残差 {calib.max_dev_mm ?? "—"} mm</p>
-          <p>平均残差 {calib.mean_dev_mm ?? "—"} mm</p>
-          {(calib.max_dev_mm ?? 0) > 1.5 && (
-            <div className="warning">
-              最大残差超过 1.5mm，点对精度不足，请检查后重新标定。
-            </div>
-          )}
-          <p>点对数量 {pairs.length}</p>
-          <p>T camera → robot</p>
-          <div className="help">
-            {demo
-              ? "此处是固定的示例残差，不代表实际标定求解结果。"
-              : "矩阵由后端保存。此处仅显示已确认返回的数据。"}
-          </div>
-        </>
+        <CalibrationResults
+          calib={calib}
+          demo={demo}
+          onNext={() => setTab(3)}
+        />
       ) : tab === 3 ? (
         <>
           <h3>TCP 实时信息</h3>
@@ -988,13 +982,9 @@ export default function Workstation() {
             <Workflow size={17} />
             {acquisition
               ? "点云帧管理"
-              : [
-                  "识别任务",
-                  "标定点管理",
-                  "焊缝管理",
-                  "程序参数",
-                  "控制器连接",
-                ][tab]}
+              : ["识别任务", "标定控制", "焊缝管理", "程序参数", "控制器连接"][
+                  tab
+                ]}
             <span>STEP 0{tab + 1}</span>
           </div>
           {compact && (
@@ -1161,117 +1151,23 @@ export default function Workstation() {
               </>
             )}
             {tab === 1 && (
-              <>
-                <h3>相机 → 基座坐标</h3>
-                {demo && (
-                  <div className="info-box">
-                    仅演示交互，不执行实际标定。
-                    <button
-                      className="secondary full"
-                      onClick={() => {
-                        setCalibMode(false);
-                        setPairs([
-                          [0, 0, 500, 320, 125, 480],
-                          [100, 0, 500, 420, 125, 480],
-                          [0, 100, 500, 320, 225, 480],
-                        ]);
-                      }}
-                    >
-                      填入示例点对
-                    </button>
-                  </div>
-                )}
-                <p className="help">
-                  每帧独立标定。至少提供 3 组非共线点对，所有坐标单位为毫米。
-                </p>
-                <label className="toggle-row">
-                  JSON / 4×4 矩阵模式
-                  <input
-                    type="checkbox"
-                    checked={calibMode}
-                    onChange={(e) => setCalibMode(e.target.checked)}
-                  />
-                </label>
-                {calibMode ? (
-                  <textarea
-                    rows={10}
-                    placeholder='{"matrix": [[1,0,0,0], ...]}'
-                    value={advanced}
-                    onChange={(e) => setAdvanced(e.target.value)}
-                  />
-                ) : (
-                  <div className="pair-list">
-                    {pairs.map((row, i) => (
-                      <div key={i}>
-                        <h4>
-                          点对 {i + 1}
-                          <button
-                            onClick={() =>
-                              setPairs(pairs.filter((_, j) => i !== j))
-                            }
-                          >
-                            删除
-                          </button>
-                        </h4>
-                        <small>相机 X / Y / Z　→　基座 X / Y / Z</small>
-                        <div className="pair-grid">
-                          {row.map((v, j) => (
-                            <input
-                              aria-label={`点对${i + 1}坐标${j + 1}`}
-                              key={j}
-                              type="number"
-                              value={v}
-                              onChange={(e) =>
-                                setPairs(
-                                  pairs.map((r, k) =>
-                                    k === i
-                                      ? r.map((n, l) =>
-                                          l === j ? Number(e.target.value) : n,
-                                        )
-                                      : r,
-                                  ),
-                                )
-                              }
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      className="secondary full"
-                      onClick={() => setPairs([...pairs, [0, 0, 0, 0, 0, 0]])}
-                    >
-                      ＋ 添加点对
-                    </button>
-                  </div>
-                )}
-                <button
-                  className="primary full"
-                  disabled={!fid || busy || (!calibMode && pairs.length < 3)}
-                  onClick={() => void saveCalib()}
-                >
-                  保存标定
-                </button>
-                <div className="info-box">
-                  标定：{calib.calib_tag}
-                  <br />
-                  最大残差：{calib.max_dev_mm ?? "—"} mm
-                  <br />
-                  平均残差：{calib.mean_dev_mm ?? "—"} mm
-                </div>
-                {(calib.max_dev_mm ?? 0) > 1.5 && (
-                  <div className="warning">
-                    最大残差超过 1.5mm，请检查点对精度后重新标定。
-                  </div>
-                )}
-                <button
-                  className="text-danger"
-                  disabled={!fid || busy}
-                  onClick={() => setPending("clear")}
-                >
-                  清除当前帧标定
-                </button>
-              </>
+              <CalibrationControls
+                demo={demo}
+                fid={fid}
+                frames={frames}
+                calib={calib}
+                busy={busy}
+                locked={!!active}
+                pairs={pairs}
+                setPairs={setPairs}
+                matrixMode={calibMode}
+                setMatrixMode={setCalibMode}
+                matrix={advanced}
+                setMatrix={setAdvanced}
+                onFrame={setFid}
+                onSave={(sample) => void saveCalib(false, sample)}
+                onClear={() => setPending("clear")}
+              />
             )}
             {tab === 2 && (
               <>

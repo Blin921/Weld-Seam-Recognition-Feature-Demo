@@ -80,6 +80,7 @@ test("frame metadata, readable fields, compact context tabs, and preserved resid
     .locator(".steps")
     .getByRole("button", { name: "坐标标定", exact: true })
     .click();
+  await page.getByRole("button", { name: "配置标定数据", exact: true }).click();
   await page.getByRole("button", { name: "保存标定", exact: true }).click();
   await expect(page.locator(".health .warn")).toContainText([
     "模型未就绪",
@@ -117,13 +118,15 @@ test("frame metadata, readable fields, compact context tabs, and preserved resid
   await page.getByRole("tab", { name: "详情与结果" }).click();
   await expect(
     page.getByRole("tabpanel", { name: "详情与结果" }),
-  ).toContainText("最大残差 2 mm");
+  ).toContainText("2.00");
   await page.screenshot({
     path: "test-results/compact-calibration.png",
     fullPage: true,
   });
   await page.getByRole("tab", { name: "操作设置" }).click();
-  await expect(page.getByRole("button", { name: "保存标定" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "重新标定", exact: true }),
+  ).toBeVisible();
   state.calibrations.A = {
     calib_tag: "changed-externally",
     uncalibrated: false,

@@ -163,6 +163,8 @@ export type Seam = {
   trajectory_mm: Vec[];
 };
 export type Calib = {
+  pair_count?: number;
+  input_kind?: "pairs" | "matrix";
   calib_tag: string;
   has_calib?: boolean;
   uncalibrated?: boolean;

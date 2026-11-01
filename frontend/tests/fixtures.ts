@@ -7,6 +7,7 @@ export async function mockBackend(page: Page) {
     done: false,
     views: 0,
     calibWrites: 0,
+    lastCalibration: null as unknown,
     programs: 0,
     pushes: 0,
     calibrations: {
@@ -74,6 +75,7 @@ export async function mockBackend(page: Page) {
     else if (path === "/api/calib") {
       state.calibWrites++;
       const data = route.request().postDataJSON();
+      state.lastCalibration = data;
       state.calibrations[data.frame] = {
         calib_tag: data.clear ? "none" : "calib-" + data.frame,
         uncalibrated: !!data.clear,
