@@ -23,6 +23,7 @@ test("polling outage keeps the same job locked and recovers without resubmitting
   expect(state.submissions).toBe(1);
   state.done = true;
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await page.getByRole("button", { name: /任务中心/ }).click();
   await expect(page.locator(".task-history")).toContainText("识别恢复后完成");
   await expect(page.locator(".connection-warning")).toHaveCount(0);
   await expect(
@@ -250,6 +251,53 @@ test("1366px layout retains a 600px viewport without horizontal overflow", async
   expect(undersized).toEqual([]);
   await page.screenshot({
     path: "test-results/layout-1366.png",
+    fullPage: true,
+  });
+});
+
+test("workspace fits the viewport on all routes, including demo and open logs", async ({
+  page,
+}) => {
+  await mockBackend(page);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  for (const path of [
+    "/scan",
+    "/recognize",
+    "/calibration",
+    "/seams",
+    "/program",
+    "/transfer",
+  ]) {
+    await page.goto(path);
+    await expect(page.locator(".panels")).toBeVisible();
+    expect(
+      await page.evaluate(() => document.documentElement.scrollHeight),
+    ).toBeLessThanOrEqual(768);
+    expect(
+      await page
+        .locator(".viewport")
+        .evaluate((e) => e.getBoundingClientRect().height),
+    ).toBeGreaterThan(220);
+  }
+  await page.getByRole("button", { name: /任务中心/ }).click();
+  await expect(page.locator(".task-body")).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight),
+  ).toBeLessThanOrEqual(768);
+  await page.goto("/");
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight),
+  ).toBeLessThanOrEqual(768);
+  await page.getByRole("button", { name: "体验演示数据 →" }).click();
+  await expect(page.locator(".demo-banner")).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollHeight),
+  ).toBeLessThanOrEqual(768);
+  await expect(
+    page.getByRole("button", { name: "开始识别", exact: true }),
+  ).toBeInViewport();
+  await page.screenshot({
+    path: "test-results/viewport-fit-1366.png",
     fullPage: true,
   });
 });

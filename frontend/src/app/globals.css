@@ -2107,3 +2107,224 @@ details,
     margin-right: 28px;
   }
 }
+/* Fit the workspace to the browser viewport; long forms scroll inside panels. */
+.workstation {
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.workstation > * {
+  flex-shrink: 0;
+}
+.workstation > .site-header {
+  height: 56px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.workstation > .page-heading {
+  padding-top: 0;
+  padding-bottom: 8px;
+}
+.workstation .page-heading h1 {
+  font-size: 22px;
+  margin: 8px 0 0;
+}
+.workstation > .status-strip {
+  min-height: 38px;
+  margin-bottom: 8px;
+}
+.workstation > .status-strip .health > span {
+  padding: 5px 0;
+}
+.workstation > .panels {
+  height: auto;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.workstation .control-panel,
+.workstation .context-panel {
+  min-height: 0;
+}
+.workstation .control-content,
+.workstation .context-content {
+  min-height: 0;
+  overflow: auto;
+}
+.workstation .context-content {
+  flex: 1;
+}
+.workstation .panel-title {
+  min-height: 44px;
+  padding-top: 12px;
+  padding-bottom: 8px;
+  flex-shrink: 0;
+}
+.workstation .control-content {
+  padding-top: 8px;
+}
+.workstation > .playback {
+  margin-top: 8px;
+  margin-bottom: 0;
+  padding: 8px 14px;
+  min-height: 42px;
+}
+.workstation > .task-drawer {
+  margin-top: 8px;
+}
+.workstation .drawer-heading {
+  padding: 10px 16px;
+  min-height: 40px;
+}
+.workstation > .task-drawer.open {
+  position: fixed;
+  left: 28px;
+  right: 28px;
+  bottom: 48px;
+  margin: 0;
+  z-index: 12;
+  box-shadow: 0 -6px 32px #12284426;
+  border: 1px solid var(--line);
+}
+.workstation .task-body {
+  height: 240px;
+  max-height: calc(100dvh - 140px);
+}
+.workstation > .workflow-pager,
+.workstation > footer {
+  display: none;
+}
+.workstation > .steps {
+  margin: 8px 28px;
+  padding: 0;
+  gap: 10px 20px;
+  min-height: 26px;
+}
+.workstation > .demo-banner {
+  margin-top: 0;
+  margin-bottom: 8px;
+  padding: 8px 14px;
+}
+.workstation > .demo-banner p {
+  margin-top: 3px;
+  line-height: 1.4;
+}
+.workstation > .demo-banner button {
+  padding: 8px;
+}
+.workstation > .connection-warning {
+  margin-bottom: 8px;
+  padding: 6px 12px;
+}
+.workstation .view-toolbar {
+  height: 42px;
+}
+.workstation .cloud-canvas,
+.workstation .viewport-empty {
+  top: 42px;
+  bottom: 70px;
+}
+.workstation .view-controls {
+  bottom: 34px;
+}
+.workstation .view-status {
+  bottom: 3px;
+}
+.workstation .legend {
+  bottom: 80px;
+}
+.workstation .viewport-empty .empty-orbit {
+  padding: 12px;
+  margin-bottom: 6px;
+  box-shadow: none;
+}
+.workstation .viewport-empty h2 {
+  margin: 6px 0;
+}
+.workstation .viewport-empty p {
+  margin: 4px 0;
+}
+.workstation .viewport-empty > span {
+  display: none;
+}
+.workstation .transfer-main {
+  height: 100%;
+  overflow: auto;
+}
+@media (min-width: 1200px) {
+  .design-home > .site-header {
+    height: 56px;
+  }
+  .design-home .home-hero {
+    margin: 0 56px 12px 74px;
+    align-items: stretch;
+  }
+  .design-home .home-copy {
+    padding-top: 4px;
+  }
+  .design-home .home-copy h1 {
+    font-size: 28px;
+    line-height: 1.4;
+    margin: 10px 0;
+  }
+  .design-home .home-copy h2 {
+    font-size: 16px;
+    margin-bottom: 8px;
+  }
+  .design-home .home-copy p {
+    margin-bottom: 8px;
+  }
+  .design-home .home-cta,
+  .design-home .demo-entry {
+    display: inline-flex;
+    align-items: center;
+    padding: 10px 18px;
+    min-height: 40px;
+    vertical-align: middle;
+  }
+  .design-home .demo-entry {
+    margin: 0 0 0 10px;
+  }
+  .design-home .home-copy .demo-entry-help {
+    margin-top: 8px;
+  }
+  .design-home .hero-cloud {
+    height: clamp(260px, calc(100dvh - 470px), 340px);
+  }
+  .design-home .feature-section {
+    margin-top: 0;
+  }
+  .design-home .feature-section > h2 {
+    font-size: 22px;
+    margin-bottom: 10px;
+  }
+  .design-home .feature-card {
+    min-height: 210px;
+    padding: 16px 18px;
+  }
+  .design-home .feature-card > svg {
+    margin: 12px 0;
+  }
+  .design-home .feature-card p {
+    margin-bottom: 12px;
+  }
+  .design-home .home-disclaimer {
+    margin-top: 10px;
+    margin-bottom: 4px;
+  }
+  .design-home .architecture summary {
+    padding: 4px 0;
+  }
+  .design-home {
+    padding-bottom: 8px;
+  }
+}
+.workstation .control-content .primary.full,
+.workstation .camera .secondary.full {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  box-shadow: 0 -5px 12px var(--surface);
+}

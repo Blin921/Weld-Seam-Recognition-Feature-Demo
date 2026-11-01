@@ -191,7 +191,7 @@ export default function Workstation() {
   const [jobs, setJobs] = useState<Job[]>([]),
     [active, setActive] = useState<string | null>(null),
     [busy, setBusy] = useState(false),
-    [drawer, setDrawer] = useState(false),
+    [drawerState, setDrawerState] = useState({ path: pathname, open: false }),
     [toast, setToast] = useState(""),
     [events, setEvents] = useState<string[]>([]),
     [dark, setDark] = useState(false),
@@ -205,6 +205,8 @@ export default function Workstation() {
       remote_path: string;
       existed_before: boolean;
     } | null>(null);
+  const drawer = drawerState.path === pathname && drawerState.open;
+  const setDrawer = (open: boolean) => setDrawerState({ path: pathname, open });
   const [pairs, setPairs] = useState<number[][]>(
       Array.from({ length: 3 }, () => [0, 0, 0, 0, 0, 0]),
     ),
